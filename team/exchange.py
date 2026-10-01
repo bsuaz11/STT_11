@@ -19,8 +19,8 @@ class MyExchange(Exchange):
     # TODO: pick your published fee schedule (bps of notional).
     # Undercut the arena's 15/10 to attract flow, or charge premium.
     # Every trader sees it on the dashboard (STATS → venue fee schedules).
-    taker_bps = None      # None → class default
-    rebate_bps = None
+    taker_bps = 14      # None → class default
+    rebate_bps = 11
 
     # Optional extra hooks:
     #   def accept_order(self, order, portfolio): return True, ""
