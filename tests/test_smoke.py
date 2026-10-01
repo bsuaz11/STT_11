@@ -140,7 +140,7 @@ def test_anthropic_key_and_response():
     try:
         client = anthropic.Anthropic()
         resp = client.messages.create(
-            model="claude-3-5-haiku-latest",
+            model="claude-haiku-4-5-20251001",
             max_tokens=8,
             messages=[{"role": "user", "content": "Reply with the single word OK."}],
         )
