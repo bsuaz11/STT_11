@@ -185,18 +185,24 @@ def test_engine_and_sdk_smoke():
 def test_exchange_connection():
     """6. Bot connects to the exchange and market data flows.
 
-    Set EXCHANGE_HOST (and EXCHANGE_PORT, default 8765) to the class arena to
-    run this; it connects, sends a shared.messages.Handshake, and waits
-    for a BookSnapshot.
+    Uses EXCHANGE_URL when set (what `make register` writes to .env, e.g.
+    wss://feed.<arena> for a TLS-hosted arena — the same address the bots
+    use), else EXCHANGE_HOST (and EXCHANGE_PORT, default 8765). It connects,
+    sends a shared.messages.Handshake, and waits for a BookSnapshot.
     """
+    try:                                # .env from `make register`; shell wins
+        from shared.envfile import load_env
+        load_env()
+    except ImportError:
+        pass
     host = os.environ.get("EXCHANGE_HOST")
-    if not host:
-        pytest.skip("set EXCHANGE_HOST / EXCHANGE_PORT to the class arena to run the live connect check")
     port = os.environ.get("EXCHANGE_PORT", "8765")
+    url = os.environ.get("EXCHANGE_URL") or (f"ws://{host}:{port}" if host else None)
+    if not url:
+        pytest.skip("set EXCHANGE_URL (or EXCHANGE_HOST / EXCHANGE_PORT) to the class arena to run the live connect check")
     websockets = pytest.importorskip("websockets")
 
     async def _probe() -> bool:
-        url = f"ws://{host}:{port}"
         async with websockets.connect(url) as ws:
             # Every message on the wire is a Pydantic model from
             # shared/messages.py — never a hand-rolled dict (CLAUDE.md rule 1).
@@ -210,5 +216,5 @@ def test_exchange_connection():
     try:
         ok = asyncio.run(asyncio.wait_for(_probe(), timeout=20))
     except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"EXCHANGE_HOST is set but couldn't reach the arena at {host}:{port} ({exc}) — check the URL/token")
+        pytest.skip(f"couldn't reach the arena at {url} ({exc}) — check the URL/token")
     assert ok, "connected to the arena but no market data arrived"
