@@ -1,18 +1,23 @@
 """
 STT_11 — trader bot.
 
-Passive, long-only dip buyer. Instead of crossing the spread (paying the
-30 bps taker fee plus half the spread on every trade), it rests limit orders
-and lets other people trade into them, earning the maker rebate:
+Passive, long-only market maker. Spreads on the arena are wide (20–80 bps)
+and the taker fee is 30 bps, so the money is in being the resting order
+other people trade into — earning part of the spread plus the maker rebate —
+never in crossing the spread:
 
-  * a bid ENTRY_BPS below the stock's recent average price (buy the dip)
-  * once it holds shares, an offer TAKE_BPS above what it paid (sell the bounce)
+  * a bid QUOTE_BPS below the current mid (inside the spread, never crossing)
+  * once it holds shares, an offer at QUOTE_BPS above the mid, but never
+    below TAKE_BPS over what it paid
   * a stop: if the price falls STOP_BPS below what it paid, sell at the bid
+  * at most MAX_POSITION shares per stock, so a falling stock can't pile up
 
-In the headless simulator at live fees this earned +0.3–0.4% per session
-across 5 seeds, against +0.1% for holding and −10% for the old crossover
-strategy that crossed the spread. The simulator is not the live market —
-watch the real numbers before trusting it.
+Replayed on 30 minutes of the arena's real public order book (fills when a
+real trade prints through our price), this beat the earlier "buy 0.4% below
+the 2-minute average" version in both halves of the recording: +$866 vs
++$200 overall. That version lost ~$3,400 live: its 1.5% stop against a 0.4%
+target needed an ~80% win rate. One 30-minute sample is not proof — compare
+the live P&L against the other traders before trusting it.
 
 Run one seat:
     TEAM_ID=stt_11_trader_1 python -m team.trader
@@ -35,12 +40,12 @@ from arena.trader import _AdaptedTraderBot
 logger = logging.getLogger(__name__)
 
 # ── Strategy settings ────────────────────────────────────────────────────
-WINDOW = 240          # mid-price samples in the rolling average (2 min at 2/s)
-ENTRY_BPS = 40        # rest our bid this far below the average
-TAKE_BPS = 40         # rest our exit this far above what we paid
-STOP_BPS = 150        # sell at the bid if price drops this far below what we paid
+WARMUP = 20           # mid samples (10 s at 2/s) before quoting a symbol
+QUOTE_BPS = 20        # rest our bid/offer this far from the current mid
+TAKE_BPS = 40         # never offer below this much over what we paid
+STOP_BPS = 100        # sell at the bid if price drops this far below what we paid
 ORDER_QTY = 20        # shares per buy order
-MAX_POSITION = 100    # most shares to hold in one symbol (week 1 limit is 200)
+MAX_POSITION = 60     # most shares to hold in one symbol (week 1 limit is 200)
 
 # ── Order-management settings ────────────────────────────────────────────
 REPRICE_BPS = 10      # replace a resting order only if its price is this far off
@@ -62,29 +67,29 @@ class MyTrader(Trader):
         for sym in market.symbols():
             mid = market.mid_price(sym)
             if mid:
-                self._mids.setdefault(sym, deque(maxlen=WINDOW)).append(mid)
+                self._mids.setdefault(sym, deque(maxlen=WARMUP)).append(mid)
 
     def orders_for(self, symbol, market, portfolio):
         """The orders we want resting in `symbol` now: [(side, qty, price)]."""
         history = self._mids.get(symbol, ())
-        if len(history) < WINDOW:
+        if len(history) < WARMUP:
             return []                             # not enough data yet
-        mean = sum(history) / WINDOW
+        mid = history[-1]
         held = portfolio.positions.get(symbol, 0)
         bid, ask = market.best_bid(symbol), market.best_ask(symbol)
         # Shares we were granted at connect have no purchase price; measure
-        # them against the average instead.
-        cost = self._bought.get(symbol, (0, mean))[1]
+        # them against the mid instead.
+        cost = self._bought.get(symbol, (0, mid))[1]
 
         orders = []
         if held > 0:
             if bid and bid < cost * (1 - STOP_BPS / 1e4):
                 return [("sell", held, bid)]      # stop out at the bid
-            target = cost * (1 + TAKE_BPS / 1e4)
-            orders.append(("sell", held, round(max(target, ask or 0), 2)))
+            price = max(cost * (1 + TAKE_BPS / 1e4), mid * (1 + QUOTE_BPS / 1e4))
+            orders.append(("sell", held, round(price, 2)))
         if held < MAX_POSITION:
-            price = round(mean * (1 - ENTRY_BPS / 1e4), 2)
-            if bid is None or price <= bid:       # long-only, and never cross to buy
+            price = round(mid * (1 - QUOTE_BPS / 1e4), 2)
+            if ask is None or price < ask:        # long-only, and never cross to buy
                 orders.append(("buy", min(ORDER_QTY, MAX_POSITION - held), price))
         return orders
 
