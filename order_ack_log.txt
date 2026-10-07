@@ -1,0 +1,49 @@
+║  Cash:     set at connect  Tick: 0.5s        ║
+16:32:17  INFO      Connecting to wss://feed.algoarena-st.duckdns.org (EXCHANGE_URL from the shell)
+16:32:18  INFO      Connected to wss://feed.algoarena-st.duckdns.org as stt_11_trader_2 (trader)
+16:34:18  INFO      Order: buy 20 MSFT @ 433.69
+16:34:18  INFO      Order: buy 20 NVDA @ 135.26
+16:34:18  INFO      Order: buy 20 TSLA @ 395.86
+16:34:18  INFO      Order: buy 20 AMZN @ 150.14
+16:34:18  INFO      Order: buy 20 GOOGL @ 142.98
+16:34:18  INFO      Order: buy 20 META @ 669.10
+16:34:18  INFO      Order: buy 20 NFLX @ 867.70
+16:34:18  INFO      Order: buy 20 AMD @ 242.92
+16:34:18  INFO      Order: buy 20 INTC @ 22.16
+16:34:18  INFO      order_ack -> id: 513dae0b-83fc-4685-9442-3914e0da3814 buy 20 MSFT @ 433.69
+16:34:18  INFO      order_ack -> id: 42b0c487-61ed-49f6-80fd-8c94535c9a18 buy 20 NVDA @ 135.26
+16:34:18  INFO      order_ack -> id: 7af7f45e-2c67-4903-a273-589dde38bcf7 buy 20 TSLA @ 395.86
+16:34:18  INFO      order_ack -> id: 0f54024c-f485-4701-a2f4-1ebabe463979 buy 20 AMZN @ 150.14
+16:34:18  INFO      order_ack -> id: 3fae96ce-9021-4d98-bd0e-797c2133708e buy 20 GOOGL @ 142.98
+16:34:18  INFO      order_ack -> id: f60d4c42-d067-467a-b16e-2be0031dcddb buy 20 META @ 669.10
+16:34:18  INFO      order_ack -> id: 796c225d-8726-47a3-8459-8f974adc846d buy 20 NFLX @ 867.70
+16:34:18  INFO      order_ack -> id: 6adbd3a1-da4e-4a86-bb0b-95517372df6b buy 20 AMD @ 242.92
+16:34:18  INFO      order_ack -> id: 276ec783-c335-4004-9c81-7c6b999c19e1 buy 20 INTC @ 22.16
+16:34:19  INFO      Order: buy 20 AAPL @ 238.50
+16:34:19  INFO      order_ack -> id: 413cdf50-3cad-4ae4-89b2-383256954323 buy 20 AAPL @ 238.50
+16:34:31  INFO      Order: buy 20 TSLA @ 396.27
+16:34:31  INFO      order_ack -> id: 7cdc494a-3dcd-4a39-876f-9c50fa2808e8 buy 20 TSLA @ 396.27
+16:34:39  INFO      Order: buy 20 AAPL @ 238.26
+16:34:39  INFO      order_ack -> id: ef95eca5-562b-4f39-8f90-dc282d1ba85a buy 20 AAPL @ 238.26
+16:34:43  INFO      Order: buy 20 AMD @ 243.17
+16:34:43  INFO      order_ack -> id: c909c485-33cd-4fd4-a3c9-8f9c79c61e63 buy 20 AMD @ 243.17
+16:34:43  INFO      Order: buy 20 TSLA @ 396.68
+16:34:43  INFO      order_ack -> id: 464d1891-743a-4c04-adaa-8a12a86fbee9 buy 20 TSLA @ 396.68
+16:34:56  INFO      Order: buy 20 AAPL @ 238.02
+16:34:56  INFO      order_ack -> id: 124820c6-679f-42d9-bda7-e9171f96b0e2 buy 20 AAPL @ 238.02
+16:34:56  INFO      Order: buy 20 TSLA @ 397.08
+16:34:56  INFO      order_ack -> id: fc58e1ec-9fa4-400d-bd26-a5cfda6f2359 buy 20 TSLA @ 397.08
+16:35:13  INFO      Order: buy 20 AAPL @ 237.78
+16:35:13  INFO      order_ack -> id: 315ca944-b2b3-4192-82db-d326ce1cf71c buy 20 AAPL @ 237.78
+16:35:14  INFO      Order: buy 20 TSLA @ 397.48
+16:35:14  INFO      order_ack -> id: 1e554806-a00d-4d21-8d3f-e59e7e1e5fdb buy 20 TSLA @ 397.48
+16:35:20  INFO      Order: buy 20 NFLX @ 868.57
+16:35:20  INFO      order_ack -> id: 48dfb1e1-6e44-4b72-aa6f-1fd26c3745fa buy 20 NFLX @ 868.57
+16:35:32  INFO      Order: buy 20 NVDA @ 135.12
+16:35:33  INFO      order_ack -> id: 18187e2c-95ea-42bd-8c40-a6f76d5f715e buy 20 NVDA @ 135.12
+16:35:36  INFO      Order: buy 20 AAPL @ 237.54
+16:35:36  INFO      order_ack -> id: 371f85a0-5258-4627-9452-35267dbd357b buy 20 AAPL @ 237.54
+16:35:57  INFO      Order: buy 20 TSLA @ 397.52
+16:35:57  INFO      order_ack -> id: 0800a45b-f86f-4487-ab7c-7fa681bf3149 buy 20 TSLA @ 397.52
+16:36:11  INFO      Order: buy 20 AAPL @ 237.30
+16:36:11  INFO      order_ack -> id: 3166eb36-f1e3-4c99-8849-5c6d580c1d1e buy 20 AAPL @ 237.30

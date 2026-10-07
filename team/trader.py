@@ -199,6 +199,7 @@ class PassiveTraderBot(_AdaptedTraderBot):
         ack = OrderAck.model_validate_json(raw)
         if ack.team_id != _trader_config.TEAM_ID:
             return
+        logger.info("order_ack -> id: %s %s %d %s @ %.2f", ack.order_id, ack.side, ack.quantity, ack.symbol, ack.price)
         pending = self._unacked.get(ack.symbol, [])
         for i, (side, price, _qty, _t) in enumerate(pending):
             if side == ack.side and abs(price - ack.price) < 0.005:
