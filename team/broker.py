@@ -18,6 +18,7 @@ import time
 from collections import deque
 
 import broker.config as _broker_config
+from shared.messages import PlaceOrder
 
 from arena import Broker
 from arena.broker import _AdaptedBrokerBot
@@ -34,9 +35,34 @@ MESSAGE_BUDGET = 16
 # Pricing. In the headless simulator at live fees (30 bps taker, 5 bps
 # rebate), a 30 bps minimum width plus inventory skew beat the default
 # quoting on every one of 5 seeds: wider quotes get picked off less, and the
-# skew sheds inventory before a trend turns it into a loss.
+# skew sheds inventory before a trend turns it into a loss. Replayed on 30
+# minutes of the real public order book, reaching full skew at 100 shares
+# instead of 300 did better (+$1,222 vs +$961) and lost on fewer symbols;
+# 20 bps looked better on the replay but was the worst in the simulator.
 MIN_SPREAD_BPS = 30   # never quote narrower than this (default width is ≤25 bps)
-MAX_INVENTORY = 300   # shares at which the skew reaches a full half-spread
+MAX_INVENTORY = 100   # shares at which the skew reaches a full half-spread
+
+
+class _ErrorTap:
+    """Wraps the websocket to notice SHORTS_LOCKED rejections, which the
+    stock bot only logs."""
+
+    def __init__(self, ws, bot):
+        self._ws, self._bot = ws, bot
+
+    def __getattr__(self, name):
+        return getattr(self._ws, name)
+
+    def __aiter__(self):
+        return self._tap()
+
+    async def _tap(self):
+        async for raw in self._ws:
+            if '"SHORTS_LOCKED"' in raw and not self._bot._shorts_locked:
+                self._bot._shorts_locked = True
+                logger.info("Short selling is locked this week — "
+                            "quoting offers only for shares we hold")
+            yield raw
 
 
 class BudgetedBrokerBot(_AdaptedBrokerBot):
@@ -50,8 +76,30 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
     def __init__(self, owner, exchange_url=None):
         super().__init__(owner, exchange_url)
         self._sent = deque()                    # send times, for the quota
+        # Until week 4 a sell may only reduce a long. Once the venue says so,
+        # cap each requote's offers at the shares we hold instead of sending
+        # sells that bounce (each bounce also burns quota).
+        self._shorts_locked = False
+        self._sell_room = {}                    # symbol -> shares we may still offer
+
+    async def connect_to_exchange(self):
+        await super().connect_to_exchange()
+        self._ws = _ErrorTap(self._ws, self)
+
+    async def quote_symbol(self, symbol):
+        if self._shorts_locked:
+            self._sell_room[symbol] = max(0, self.state.positions.get(symbol, 0))
+        await super().quote_symbol(symbol)
+        self._sell_room.pop(symbol, None)
 
     async def _send(self, msg):
+        if (isinstance(msg, PlaceOrder) and msg.side == "sell"
+                and msg.symbol in self._sell_room):
+            qty = min(msg.quantity, self._sell_room[msg.symbol])
+            if qty <= 0:
+                return                          # nothing left to offer
+            self._sell_room[msg.symbol] -= qty
+            msg = msg.model_copy(update={"quantity": qty})
         self._sent.append(time.monotonic())
         await super()._send(msg)
 
