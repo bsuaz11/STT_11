@@ -52,6 +52,8 @@ REPRICE_BPS = 10      # replace a resting order only if its price is this far of
 ACK_TIMEOUT_SEC = 3   # forget an order the venue never confirmed after this long
 MESSAGE_BUDGET = 16   # order/cancel messages per second (venue allows 20 per 1 s tick)
 
+ON_EVENT_TIME = 120
+IPO_SHARES = 40
 
 class MyTrader(Trader):
     """Your alpha lives here."""
@@ -60,6 +62,7 @@ class MyTrader(Trader):
         super().__init__()
         self._bought = {}                         # symbol -> (shares, avg price)
         self._mids = {}                           # symbol -> recent mid prices
+        self._paused = {} #keep track of what stocks are being paused atm
 
     def observe(self, market):
         """Sample every mid once per tick. The venue only sends a symbol's
@@ -85,8 +88,13 @@ class MyTrader(Trader):
         if held > 0:
             if bid and bid < cost * (1 - STOP_BPS / 1e4):
                 return [("sell", held, bid)]      # stop out at the bid
-            price = max(cost * (1 + TAKE_BPS / 1e4), mid * (1 + QUOTE_BPS / 1e4))
-            orders.append(("sell", held, round(price, 2)))
+            target = cost * (1 + TAKE_BPS / 1e4)
+            orders.append(("sell", held, round(max(target, ask or 0), 2)))
+        if held < MAX_POSITION and time.monotonic() >= self._paused.get(symbol, 0):
+            price = round(mean * (1 - ENTRY_BPS / 1e4), 2)
+            if bid is None or price <= bid:       # long-only, and never cross to buy
+              price = max(cost * (1 + TAKE_BPS / 1e4), mid * (1 + QUOTE_BPS / 1e4))
+              orders.append(("sell", held, round(price, 2)))
         if held < MAX_POSITION:
             price = round(mid * (1 - QUOTE_BPS / 1e4), 2)
             if ask is None or price < ask:        # long-only, and never cross to buy
@@ -107,10 +115,23 @@ class MyTrader(Trader):
         return None                               # PassiveTraderBot uses orders_for()
 
     # Optional extra hooks:
-    #   def on_event(self, event, message, data): ...   # shocks, calendar
-    #   def on_ipo(self, symbol, lo, hi, shares, data): ...
+    # shocks, calendar
+    def on_event(self, event, message, data): 
+        logger.info("Event: %s | %s | %s", event, message, data)
+        ticker = data.get("symbol") if isinstance(data, dict) else None
+        if ticker:
+            self._paused[ticker] = time.monotonic() + ON_EVENT_TIME
+
+    def on_ipo(self, symbol, lo, hi, shares, data): 
     #       # An IPO book opened — return qty (bids top of range) or
     #       # (qty, max_price) as your indication, None to pass.
+        logger.info("IPO for %s at range %.2f-%.2f, %s shares | %s", symbol, lo, hi, shares, data)
+        
+        #get as many ipo shares offered as possible
+        qty = min(shares, IPO_SHARES)
+
+        #capping at midpoint so i won't pay full price 
+        return (qty, round((lo + hi) / 2, 2))
 
     def run(self) -> None:
         logging.basicConfig(level=logging.INFO,
