@@ -1,0 +1,180 @@
+TEAM_ID=stt_11_trader_2 python -m team.trader
+
+╔══════════════════════════════════════════════╗
+║       AlgoArena — Trader Bot                 ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_trader_2                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Cash:     set at connect  Tick: 0.5s        ║
+╚══════════════════════════════════════════════╝
+
+16:32:17  INFO      Connecting to wss://feed.algoarena-st.duckdns.org (EXCHANGE_URL from the shell)
+16:32:18  INFO      Connected to wss://feed.algoarena-st.duckdns.org as stt_11_trader_2 (trader)
+Tick 570138  rank=#?  net_worth=$277,501.38  realized_pnl=+0.00
+16:32:18  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps
+Session: FEE_SCHEDULE — Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps
+16:32:18  INFO      Event: FEE_SCHEDULE | Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps | {'port': 8765, 'taker': 0.003, 'rebate': 0.0005, 'net': 0.0025, 'old': {'taker': 0.003, 'rebate': 0.0005}, 'new': {'taker': 0.003, 'rebate': 0.0005}}
+16:32:18  INFO      Session event: SESSION_OPEN — Session already open — you joined mid-session.
+▶  Session open — trading begins
+Tick 570139  rank=#?  net_worth=$277,501.86  realized_pnl=+0.00
+Tick 570141  rank=#?  net_worth=$277,503.89  realized_pnl=+0.00
+Tick 570143  rank=#?  net_worth=$277,504.84  realized_pnl=+0.00
+Tick 570145  rank=#?  net_worth=$277,504.47  realized_pnl=+0.00
+Tick 570147  rank=#?  net_worth=$277,507.82  realized_pnl=+0.00
+Tick 570149  rank=#?  net_worth=$277,510.46  realized_pnl=+0.00
+Tick 570151  rank=#?  net_worth=$277,511.41  realized_pnl=+0.00
+Tick 570153  rank=#?  net_worth=$277,512.24  realized_pnl=+0.00
+Tick 570155  rank=#?  net_worth=$277,513.19  realized_pnl=+0.00
+Tick 570157  rank=#?  net_worth=$277,514.14  realized_pnl=+0.00
+Tick 570159  rank=#?  net_worth=$277,515.21  realized_pnl=+0.00
+Tick 570161  rank=#?  net_worth=$277,516.16  realized_pnl=+0.00
+Tick 570163  rank=#?  net_worth=$277,517.11  realized_pnl=+0.00
+Tick 570165  rank=#?  net_worth=$277,518.07  realized_pnl=+0.00
+Tick 570167  rank=#?  net_worth=$277,520.46  realized_pnl=+0.00
+Tick 570169  rank=#?  net_worth=$277,523.09  realized_pnl=+0.00
+Tick 570171  rank=#?  net_worth=$277,528.24  realized_pnl=+0.00
+Tick 570173  rank=#?  net_worth=$277,533.15  realized_pnl=+0.00
+Tick 570175  rank=#?  net_worth=$277,532.06  realized_pnl=+0.00
+Tick 570177  rank=#?  net_worth=$277,533.37  realized_pnl=+0.00
+Tick 570179  rank=#?  net_worth=$277,539.73  realized_pnl=+0.00
+Tick 570182  rank=#?  net_worth=$277,539.59  realized_pnl=+0.00
+Tick 570184  rank=#?  net_worth=$277,540.66  realized_pnl=+0.00
+Tick 570186  rank=#?  net_worth=$277,544.02  realized_pnl=+0.00
+Tick 570188  rank=#?  net_worth=$277,547.49  realized_pnl=+0.00
+Tick 570190  rank=#?  net_worth=$277,552.16  realized_pnl=+0.00
+Tick 570192  rank=#?  net_worth=$277,560.31  realized_pnl=+0.00
+Tick 570194  rank=#?  net_worth=$277,563.66  realized_pnl=+0.00
+Tick 570196  rank=#?  net_worth=$277,564.97  realized_pnl=+0.00
+Tick 570198  rank=#?  net_worth=$277,565.92  realized_pnl=+0.00
+Tick 570200  rank=#?  net_worth=$277,567.84  realized_pnl=+0.00
+Tick 570202  rank=#?  net_worth=$277,572.75  realized_pnl=+0.00
+Tick 570204  rank=#?  net_worth=$277,579.22  realized_pnl=+0.00
+Tick 570206  rank=#?  net_worth=$277,582.57  realized_pnl=+0.00
+Tick 570208  rank=#?  net_worth=$277,588.92  realized_pnl=+0.00
+Tick 570210  rank=#?  net_worth=$277,587.35  realized_pnl=+0.00
+Tick 570212  rank=#?  net_worth=$277,587.94  realized_pnl=+0.00
+Tick 570214  rank=#?  net_worth=$277,588.66  realized_pnl=+0.00
+Tick 570216  rank=#?  net_worth=$277,588.17  realized_pnl=+0.00
+Tick 570218  rank=#?  net_worth=$277,587.68  realized_pnl=+0.00
+Tick 570220  rank=#?  net_worth=$277,588.51  realized_pnl=+0.00
+Tick 570222  rank=#?  net_worth=$277,589.46  realized_pnl=+0.00
+Tick 570224  rank=#?  net_worth=$277,591.01  realized_pnl=+0.00
+Tick 570226  rank=#?  net_worth=$277,592.08  realized_pnl=+0.00
+Tick 570228  rank=#?  net_worth=$277,591.48  realized_pnl=+0.00
+Tick 570230  rank=#?  net_worth=$277,590.87  realized_pnl=+0.00
+Tick 570232  rank=#?  net_worth=$277,591.82  realized_pnl=+0.00
+Tick 570234  rank=#?  net_worth=$277,591.81  realized_pnl=+0.00
+Tick 570237  rank=#?  net_worth=$277,594.56  realized_pnl=+0.00
+Tick 570239  rank=#?  net_worth=$277,597.55  realized_pnl=+0.00
+Tick 570241  rank=#?  net_worth=$277,598.50  realized_pnl=+0.00
+Tick 570243  rank=#?  net_worth=$277,598.97  realized_pnl=+0.00
+Tick 570245  rank=#?  net_worth=$277,599.92  realized_pnl=+0.00
+Tick 570247  rank=#?  net_worth=$277,600.87  realized_pnl=+0.00
+Tick 570249  rank=#?  net_worth=$277,601.83  realized_pnl=+0.00
+Tick 570251  rank=#?  net_worth=$277,602.78  realized_pnl=+0.00
+Tick 570253  rank=#?  net_worth=$277,604.09  realized_pnl=+0.00
+Tick 570255  rank=#?  net_worth=$277,605.04  realized_pnl=+0.00
+Tick 570257  rank=#?  net_worth=$277,606.83  realized_pnl=+0.00
+16:34:18  INFO      Order: buy 20 MSFT @ 433.69
+16:34:18  INFO      Order: buy 20 NVDA @ 135.26
+16:34:18  INFO      Order: buy 20 TSLA @ 395.86
+16:34:18  INFO      Order: buy 20 AMZN @ 150.14
+16:34:18  INFO      Order: buy 20 GOOGL @ 142.98
+16:34:18  INFO      Order: buy 20 META @ 669.10
+16:34:18  INFO      Order: buy 20 NFLX @ 867.70
+16:34:18  INFO      Order: buy 20 AMD @ 242.92
+16:34:18  INFO      Order: buy 20 INTC @ 22.16
+16:34:18  INFO      order_ack -> id: 513dae0b-83fc-4685-9442-3914e0da3814 buy 20 MSFT @ 433.69
+16:34:18  INFO      order_ack -> id: 42b0c487-61ed-49f6-80fd-8c94535c9a18 buy 20 NVDA @ 135.26
+16:34:18  INFO      order_ack -> id: 7af7f45e-2c67-4903-a273-589dde38bcf7 buy 20 TSLA @ 395.86
+16:34:18  INFO      order_ack -> id: 0f54024c-f485-4701-a2f4-1ebabe463979 buy 20 AMZN @ 150.14
+16:34:18  INFO      order_ack -> id: 3fae96ce-9021-4d98-bd0e-797c2133708e buy 20 GOOGL @ 142.98
+16:34:18  INFO      order_ack -> id: f60d4c42-d067-467a-b16e-2be0031dcddb buy 20 META @ 669.10
+16:34:18  INFO      order_ack -> id: 796c225d-8726-47a3-8459-8f974adc846d buy 20 NFLX @ 867.70
+16:34:18  INFO      order_ack -> id: 6adbd3a1-da4e-4a86-bb0b-95517372df6b buy 20 AMD @ 242.92
+16:34:18  INFO      order_ack -> id: 276ec783-c335-4004-9c81-7c6b999c19e1 buy 20 INTC @ 22.16
+16:34:19  INFO      Order: buy 20 AAPL @ 238.50
+16:34:19  INFO      order_ack -> id: 413cdf50-3cad-4ae4-89b2-383256954323 buy 20 AAPL @ 238.50
+Tick 570259  rank=#?  net_worth=$277,607.78  realized_pnl=+0.00
+Tick 570261  rank=#?  net_worth=$277,608.73  realized_pnl=+0.00
+Tick 570263  rank=#?  net_worth=$277,609.69  realized_pnl=+0.00
+Tick 570265  rank=#?  net_worth=$277,610.76  realized_pnl=+0.00
+Tick 570267  rank=#?  net_worth=$277,624.91  realized_pnl=+0.00
+Tick 570269  rank=#?  net_worth=$277,624.90  realized_pnl=+0.00
+16:34:31  INFO      Order: buy 20 TSLA @ 396.27
+16:34:31  INFO      order_ack -> id: 7cdc494a-3dcd-4a39-876f-9c50fa2808e8 buy 20 TSLA @ 396.27
+Tick 570271  rank=#?  net_worth=$277,625.85  realized_pnl=+0.00
+Tick 570273  rank=#?  net_worth=$277,626.32  realized_pnl=+0.00
+Tick 570275  rank=#?  net_worth=$277,627.28  realized_pnl=+0.00
+Tick 570277  rank=#?  net_worth=$277,628.23  realized_pnl=+0.00
+16:34:39  INFO      Order: buy 20 AAPL @ 238.26
+16:34:39  INFO      order_ack -> id: ef95eca5-562b-4f39-8f90-dc282d1ba85a buy 20 AAPL @ 238.26
+Tick 570279  rank=#?  net_worth=$277,627.38  realized_pnl=+0.00
+Tick 570281  rank=#?  net_worth=$277,627.25  realized_pnl=+0.00
+16:34:43  INFO      Order: buy 20 AMD @ 243.17
+16:34:43  INFO      order_ack -> id: c909c485-33cd-4fd4-a3c9-8f9c79c61e63 buy 20 AMD @ 243.17
+16:34:43  INFO      Order: buy 20 TSLA @ 396.68
+16:34:43  INFO      order_ack -> id: 464d1891-743a-4c04-adaa-8a12a86fbee9 buy 20 TSLA @ 396.68
+Tick 570283  rank=#?  net_worth=$277,628.08  realized_pnl=+0.00
+Tick 570285  rank=#?  net_worth=$277,630.11  realized_pnl=+0.00
+Tick 570287  rank=#?  net_worth=$277,631.07  realized_pnl=+0.00
+Tick 570289  rank=#?  net_worth=$277,632.14  realized_pnl=+0.00
+Tick 570291  rank=#?  net_worth=$277,633.09  realized_pnl=+0.00
+Tick 570293  rank=#?  net_worth=$277,634.40  realized_pnl=+0.00
+16:34:56  INFO      Order: buy 20 AAPL @ 238.02
+16:34:56  INFO      order_ack -> id: 124820c6-679f-42d9-bda7-e9171f96b0e2 buy 20 AAPL @ 238.02
+16:34:56  INFO      Order: buy 20 TSLA @ 397.08
+16:34:56  INFO      order_ack -> id: fc58e1ec-9fa4-400d-bd26-a5cfda6f2359 buy 20 TSLA @ 397.08
+Tick 570295  rank=#?  net_worth=$277,634.99  realized_pnl=+0.00
+Tick 570297  rank=#?  net_worth=$277,637.02  realized_pnl=+0.00
+Tick 570299  rank=#?  net_worth=$277,636.77  realized_pnl=+0.00
+Tick 570301  rank=#?  net_worth=$277,636.53  realized_pnl=+0.00
+Tick 570303  rank=#?  net_worth=$277,636.64  realized_pnl=+0.00
+Tick 570305  rank=#?  net_worth=$277,637.59  realized_pnl=+0.00
+Tick 570307  rank=#?  net_worth=$277,638.54  realized_pnl=+0.00
+Tick 570309  rank=#?  net_worth=$277,639.49  realized_pnl=+0.00
+16:35:13  INFO      Order: buy 20 AAPL @ 237.78
+16:35:13  INFO      order_ack -> id: 315ca944-b2b3-4192-82db-d326ce1cf71c buy 20 AAPL @ 237.78
+Tick 570311  rank=#?  net_worth=$277,640.44  realized_pnl=+0.00
+16:35:14  INFO      Order: buy 20 TSLA @ 397.48
+16:35:14  INFO      order_ack -> id: 1e554806-a00d-4d21-8d3f-e59e7e1e5fdb buy 20 TSLA @ 397.48
+Tick 570313  rank=#?  net_worth=$277,641.88  realized_pnl=+0.00
+Tick 570315  rank=#?  net_worth=$277,643.67  realized_pnl=+0.00
+Tick 570317  rank=#?  net_worth=$277,644.62  realized_pnl=+0.00
+16:35:20  INFO      Order: buy 20 NFLX @ 868.57
+16:35:20  INFO      order_ack -> id: 48dfb1e1-6e44-4b72-aa6f-1fd26c3745fa buy 20 NFLX @ 868.57
+Tick 570319  rank=#?  net_worth=$277,645.57  realized_pnl=+0.00
+Tick 570321  rank=#?  net_worth=$277,646.52  realized_pnl=+0.00
+Tick 570323  rank=#?  net_worth=$277,648.19  realized_pnl=+0.00
+Tick 570325  rank=#?  net_worth=$277,646.15  realized_pnl=+0.00
+Tick 570327  rank=#?  net_worth=$277,645.66  realized_pnl=+0.00
+Tick 570329  rank=#?  net_worth=$277,646.61  realized_pnl=+0.00
+16:35:32  INFO      Order: buy 20 NVDA @ 135.12
+16:35:33  INFO      order_ack -> id: 18187e2c-95ea-42bd-8c40-a6f76d5f715e buy 20 NVDA @ 135.12
+Tick 570331  rank=#?  net_worth=$277,646.48  realized_pnl=+0.00
+Tick 570333  rank=#?  net_worth=$277,646.83  realized_pnl=+0.00
+16:35:36  INFO      Order: buy 20 AAPL @ 237.54
+16:35:36  INFO      order_ack -> id: 371f85a0-5258-4627-9452-35267dbd357b buy 20 AAPL @ 237.54
+Tick 570335  rank=#?  net_worth=$277,647.78  realized_pnl=+0.00
+Tick 570337  rank=#?  net_worth=$277,646.22  realized_pnl=+0.00
+Tick 570339  rank=#?  net_worth=$277,644.53  realized_pnl=+0.00
+Tick 570341  rank=#?  net_worth=$277,645.48  realized_pnl=+0.00
+Tick 570343  rank=#?  net_worth=$277,645.23  realized_pnl=+0.00
+Tick 570345  rank=#?  net_worth=$277,643.54  realized_pnl=+0.00
+Tick 570347  rank=#?  net_worth=$277,641.01  realized_pnl=+0.00
+Tick 570349  rank=#?  net_worth=$277,636.21  realized_pnl=+0.00
+Tick 570351  rank=#?  net_worth=$277,637.16  realized_pnl=+0.00
+Tick 570353  rank=#?  net_worth=$277,629.23  realized_pnl=+0.00
+16:35:57  INFO      Order: buy 20 TSLA @ 397.52
+16:35:57  INFO      order_ack -> id: 0800a45b-f86f-4487-ab7c-7fa681bf3149 buy 20 TSLA @ 397.52
+Tick 570355  rank=#?  net_worth=$277,630.18  realized_pnl=+0.00
+Tick 570357  rank=#?  net_worth=$277,630.17  realized_pnl=+0.00
+Tick 570359  rank=#?  net_worth=$277,620.80  realized_pnl=+0.00
+Tick 570362  rank=#?  net_worth=$277,625.95  realized_pnl=+0.00
+Tick 570364  rank=#?  net_worth=$277,626.90  realized_pnl=+0.00
+Tick 570366  rank=#?  net_worth=$277,627.86  realized_pnl=+0.00
+Tick 570368  rank=#?  net_worth=$277,628.81  realized_pnl=+0.00
+16:36:11  INFO      Order: buy 20 AAPL @ 237.30
+16:36:11  INFO      order_ack -> id: 3166eb36-f1e3-4c99-8849-5c6d580c1d1e buy 20 AAPL @ 237.30
+Tick 570370  rank=#?  net_worth=$277,625.56  realized_pnl=+0.00
+Tick 570372  rank=#?  net_worth=$277,625.43  realized_pnl=+0.00
