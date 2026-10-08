@@ -162,9 +162,9 @@ class MyTrader(Trader):
             if s["held"] > 0 and (bid >= ref + EXIT_FRACTION * (peak - ref)
                                   or elapsed >= ramp):
                 return self._shock_order(s, sym, "sell", s["held"], sell_px, "exit ramp")
-            if (s["held"] < SHOCK_SHARES and elapsed < ramp / 2
-                    and peak / buy_px - 1 > MIN_EDGE_BPS / 1e4):
-                qty = min(SHOCK_SHARES - s["held"], int(portfolio.cash * 0.95 / buy_px))
+            leftover_room = SHOCK_SHARES - portfolio.positions.get(sym,0)
+            if (leftover_room > 0 and elapsed < ramp / 2 and peak / buy_px - 1 > MIN_EDGE_BPS / 1e4):
+                qty = min(leftover_room, int(portfolio.cash * 0.95 / buy_px))
                 if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
                     return self._shock_order(s, sym, "buy", qty, buy_px, "ride ramp")
             if s["held"] == 0 and elapsed >= ramp / 2:
@@ -184,9 +184,10 @@ class MyTrader(Trader):
             if s["held"] > 0 and (bid >= settle * (1 - SLIP_BPS / 1e4)
                                   or elapsed >= ramp * 1.5 + 2):
                 return self._shock_order(s, sym, "sell", s["held"], sell_px, "exit fade")
-            if (s["held"] < SHOCK_SHARES and ramp - 2 <= elapsed < ramp + 2
+            leftover_room = SHOCK_SHARES - portfolio.positions.get(sym,0)
+            if (leftover_room > 0 and ramp - 2 <= elapsed < ramp + 2
                     and settle / buy_px - 1 > MIN_EDGE_BPS / 1e4):
-                qty = min(SHOCK_SHARES - s["held"], int(portfolio.cash * 0.95 / buy_px))
+                qty = min(leftover_room, int(portfolio.cash * 0.95 / buy_px))
                 if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
                     return self._shock_order(s, sym, "buy", qty, buy_px, "fade low")
             if s["held"] == 0 and elapsed >= ramp + 2:
@@ -302,22 +303,29 @@ class TakerBot(_AdaptedTraderBot):
         await super()._on_session_event(msg)      # runs MyTrader.on_event
         # React to an earnings print now instead of at the next tick (up to
         # TICK_INTERVAL_SEC later): the first fills go to whoever is fastest.
+        
+        #starter runs again when session opens to ensure we make a fill during session
+        if msg.event == "SESSION_OPEN":
+            self._owner._starter = {"phase": "buy", "held": 0, "filled_at":0.0, "wait_until": 0.0}
+        #only runs when there's a shock
         if (msg.event == "CALENDAR_EVENT" and getattr(self._owner, "_shock", None)
                 and self._session_open):
             try:
                 signal = self._owner.on_tick(self.market, self.portfolio)
+                if signal is None:
+                    return
+                approved, reason = self.risk.check_order(
+                                signal.symbol, signal.side, signal.quantity, signal.price,
+                                self.portfolio, self.market)
+                if approved:
+                    await self._place_order(signal)
+                else:
+                    logger.info("Order blocked [%s]: %s", signal.symbol, reason)
             except Exception:
                 logger.exception("on_tick raised on CALENDAR_EVENT — waiting for the tick")
-                return
-            if signal is None:
-                return
-            approved, reason = self.risk.check_order(
-                signal.symbol, signal.side, signal.quantity, signal.price,
-                self.portfolio, self.market)
-            if approved:
-                await self._place_order(signal)
-            else:
-                logger.info("Order blocked [%s]: %s", signal.symbol, reason)
+                
+                
+        
 
     async def _place_order(self, signal: Signal) -> None:
         await self._send(PlaceOrder(team_id=_trader_config.TEAM_ID,
