@@ -52,9 +52,9 @@ broker capital.
 **Traders (30%), three seats of $100k.** We chose a middle ground between few
 large seats and many small ones:
 
-- **Not 1–2 large seats.** A single strategy is a single point of failure, and
-  one bug would take down all our trading. Limits are per bot, so one seat
-  also caps our total message and position capacity.
+- **Not 1–2 large seats.** A single seat concentrates our trading capital on one
+ strategy, and one bug would take down all our trading. Limits are per bot, so 
+ one seat also caps our total message and position capacity.
 - **Not 5 small seats.** Free shares don't scale with seats: five seats would
   just split the same grant thinner. Each seat also needs its own strategy
   that we can build, monitor and explain, and three is what our team can
