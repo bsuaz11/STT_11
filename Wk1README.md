@@ -8,4 +8,4 @@ How to access files:
     b. Phase0_UML.md -> the UML for phase 0 that builds off HW1
     c. ALLOCATION.md -> the file that shows how we allocated $1M across brokers and traders. Also shows team seat ids 
     d. order_ack_log.txt and run.log which shows our bot connected and an order_ack recieved
-    
+    e. HW1_Writeup.md -> writeup for design justification, and level 1 proof for homework 1 write up deliverable 
