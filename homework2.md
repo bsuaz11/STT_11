@@ -1,0 +1,1 @@
+1. Write a 200-word explanation: why does the broker's yfinance polling run on a separate thread (e.g. asyncio.to_thread or an explicit worker thread) while all socket I/O stays on the event loop? Name the concrete failure mode of calling blocking HTTP inside a coroutine, and how you would detect it (asyncio.run(..., debug=True) / slow-callback warnings).
