@@ -36,6 +36,11 @@ EXCHANGE_TICK_SEC = 1.0   # the exchange advances prices once per second
 SHOCK_SHARES = 550        # most shares to hold in a shock symbol
 POSITION_LIMIT = 600      # exchange per-symbol cap (week 3: 600) — over it is rejected
 POSITION_BUFFER = 20      # stay this far under POSITION_LIMIT
+# The limit is per TEAM and counts the broker seat too. team/broker.py holds at
+# most BROKER_MAX_SHARES (position + resting bids) in any symbol it quotes, and
+# never quotes BROKER_SKIP_SYMBOLS — keep both in sync with team/broker.py.
+BROKER_MAX_SHARES = 150
+BROKER_SKIP_SYMBOLS = ("NVDA", "TSLA")
 SLIP_BPS = 20             # price IOCs this far through the touch so they fill
 # Shock IOCs reach further: the ramp moves |pct| x overshoot / ramp_ticks per
 # tick (26-78 bps for these prints), so 20 bps only reaches the top level or
@@ -231,7 +236,8 @@ class MyTrader(Trader):
 
     def _room(self, portfolio, sym):
         """Shares we may still buy in sym without nearing the exchange cap."""
-        cap = min(SHOCK_SHARES, POSITION_LIMIT - POSITION_BUFFER)
+        broker = 0 if sym in BROKER_SKIP_SYMBOLS else BROKER_MAX_SHARES
+        cap = min(SHOCK_SHARES, POSITION_LIMIT - POSITION_BUFFER - broker)
         return cap - portfolio.positions.get(sym, 0)
 
     def _is_pending(self, sym):
@@ -363,6 +369,31 @@ class TakerBot(_AdaptedTraderBot):
     async def connect(self):
         await super().connect()
         self._ws = _AckTap(self._ws, self)
+        # The venue sends a PortfolioUpdate only on a seat's first connect of a
+        # session, at the open and on fills, so after a reconnect cash and
+        # positions are unknown until the first fill. Seed them from the
+        # leaderboard (every ~2 s) until a real PortfolioUpdate arrives.
+        self._portfolio_synced = False
+        apply = type(self.portfolio).apply_server_update
+
+        def synced_apply(update, _portfolio=self.portfolio):
+            apply(_portfolio, update)
+            self._portfolio_synced = True
+        self.portfolio.apply_server_update = synced_apply
+
+    def _on_leaderboard(self, msg) -> None:
+        super()._on_leaderboard(msg)
+        if getattr(self, "_portfolio_synced", True):
+            return
+        for entry in msg.traders:
+            if entry.get("team_id") == _trader_config.TEAM_ID:
+                self.portfolio.cash = float(entry.get("cash", self.portfolio.cash))
+                self.portfolio.positions = {k: int(v) for k, v in
+                                            (entry.get("positions") or {}).items()}
+                self._portfolio_synced = True
+                logger.info("Portfolio seeded from leaderboard: cash=%.2f positions=%s",
+                            self.portfolio.cash, self.portfolio.positions)
+                break
 
     def _on_ack(self, raw):
         ack = OrderAck.model_validate_json(raw)
