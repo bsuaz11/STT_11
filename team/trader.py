@@ -37,6 +37,12 @@ SHOCK_SHARES = 550        # most shares to hold in a shock symbol
 POSITION_LIMIT = 600      # exchange per-symbol cap (week 3: 600) — over it is rejected
 POSITION_BUFFER = 20      # stay this far under POSITION_LIMIT
 SLIP_BPS = 20             # price IOCs this far through the touch so they fill
+# Shock IOCs reach further: the ramp moves |pct| x overshoot / ramp_ticks per
+# tick (26-78 bps for these prints), so 20 bps only reaches the top level or
+# two. Shock slip = this fraction of one tick's move, clamped to [SLIP_BPS, max].
+SHOCK_SLIP_TICK_FRACTION = 0.75
+SHOCK_SLIP_MAX_BPS = 60
+MAX_ORDER_SHARES = 500    # exchange rejects any single order above this (INVALID_QUANTITY)
 MIN_EDGE_BPS = 130        # enter only if this much move is left (2 taker fees + spread)
 EXIT_FRACTION = 0.9       # sell once price covers this much of the move to the peak
 FADE_NEGATIVE = True      # after bad news, buy the overshoot and sell the recovery
@@ -159,24 +165,30 @@ class MyTrader(Trader):
         bid, ask = market.best_bid(sym), market.best_ask(sym)
         if s["ref_mid"] is None:
             s["ref_mid"] = market.mid_price(sym)  # no mid seen before the print
-        if (bid is None or ask is None or not s["ref_mid"] or now < s["wait_until"]
-                or self._is_pending(sym)):
+        # One side of the book can be empty (long-only: market makers can't
+        # offer shares they don't own, so a shock can lift every ask). Buys
+        # need an ask and sells a bid; never let a missing side freeze the play.
+        if (not s["ref_mid"] or now < s["wait_until"] or self._is_pending(sym)
+                or (bid is None and ask is None)):
             return None
 
         ref, ramp = s["ref_mid"], s["ramp_ticks"]
         elapsed = (now - s["fired"]) / EXCHANGE_TICK_SEC   # exchange ticks since the print
         peak = ref * (1 + s["overshoot"] * pct)
         settle = ref * (1 + pct)
-        buy_px = round(ask * (1 + SLIP_BPS / 1e4), 2)
-        sell_px = round(bid * (1 - SLIP_BPS / 1e4), 2)
+        tick_move_bps = abs(pct) * s["overshoot"] / max(1, ramp) * 1e4
+        slip = min(SHOCK_SLIP_MAX_BPS, max(SLIP_BPS, SHOCK_SLIP_TICK_FRACTION * tick_move_bps))
+        buy_px = round(ask * (1 + slip / 1e4), 2) if ask is not None else None
+        sell_px = round(bid * (1 - slip / 1e4), 2) if bid is not None else None
 
         if pct > 0:
             # Ride the ramp: exit near the peak, or when the ramp is over.
-            if s["held"] > 0 and (bid >= ref + EXIT_FRACTION * (peak - ref)
-                                  or elapsed >= ramp):
+            if s["held"] > 0 and sell_px and (bid >= ref + EXIT_FRACTION * (peak - ref)
+                                              or elapsed >= ramp):
                 return self._shock_order(s, sym, "sell", s["held"], sell_px, "exit ramp")
             leftover_room = self._room(portfolio, sym)
-            if (leftover_room > 0 and elapsed < ramp / 2 and peak / buy_px - 1 > MIN_EDGE_BPS / 1e4):
+            if (leftover_room > 0 and buy_px and elapsed < ramp / 2
+                    and peak / buy_px - 1 > MIN_EDGE_BPS / 1e4):
                 qty = min(leftover_room, int(portfolio.cash * 0.95 / buy_px))
                 if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
                     return self._shock_order(s, sym, "buy", qty, buy_px, "ride ramp")
@@ -187,7 +199,7 @@ class MyTrader(Trader):
         # Bad news. Step 1: sell everything we hold, granted shares included.
         if s["phase"] == "dump":
             held = portfolio.positions.get(sym, 0)
-            if held > 0 and portfolio.can_sell(sym, held):
+            if held > 0 and sell_px and portfolio.can_sell(sym, held):
                 return self._shock_order(s, sym, "sell", held, sell_px, "dump")
             bounce = settle / peak - 1            # overshoot low back to settle
             if FADE_NEGATIVE and bounce > MIN_EDGE_BPS / 1e4:
@@ -199,13 +211,13 @@ class MyTrader(Trader):
 
         # Step 2: buy near the overshoot low, sell the recovery.
         if s["phase"] == "fade":
-            if s["held"] > 0 and (bid >= settle * (1 - SLIP_BPS / 1e4)
-                                  or elapsed >= ramp * 1.5 + 2):
+            if s["held"] > 0 and sell_px and (bid >= settle * (1 - SLIP_BPS / 1e4)
+                                              or elapsed >= ramp * 1.5 + 2):
                 return self._shock_order(s, sym, "sell", s["held"], sell_px, "exit fade")
             leftover_room = self._room(portfolio, sym)
             if s["token"]:                        # one small buy, then just exit it
                 leftover_room = 0 if s["bought"] else min(leftover_room, TOKEN_SHARES)
-            if (leftover_room > 0 and ramp - 2 <= elapsed < ramp + 2
+            if (leftover_room > 0 and buy_px and ramp - 2 <= elapsed < ramp + 2
                     and (s["token"] or settle / buy_px - 1 > MIN_EDGE_BPS / 1e4)):
                 qty = min(leftover_room, int(portfolio.cash * 0.95 / buy_px))
                 if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
@@ -231,6 +243,7 @@ class MyTrader(Trader):
         self._pending[sym] = time.monotonic() + PENDING_TIMEOUT_SEC
 
     def _shock_order(self, s, sym, side, qty, price, why):
+        qty = min(qty, MAX_ORDER_SHARES)          # the rest goes on a later tick
         s["wait_until"] = time.monotonic() + ORDER_GAP_SEC
         s["acted"] = True
         s["bought"] = s["bought"] or side == "buy"
@@ -392,10 +405,20 @@ class TakerBot(_AdaptedTraderBot):
         logger.info("Session closed — holding positions (no flatten)")
 
     async def _place_order(self, signal: Signal) -> None:
-        await self._send(PlaceOrder(team_id=_trader_config.TEAM_ID,
-                                    symbol=signal.symbol, side=signal.side,
-                                    order_type="ioc", price=signal.price,
-                                    quantity=signal.quantity))
+        # trading_loop only guards on_tick, so a send that raised here would end
+        # the trading task while the listener kept the bot "connected" but idle.
+        # Log and drop the order instead; if the socket is gone, listen() ends
+        # too and run() reconnects both tasks. (CancelledError is not an
+        # Exception, so a reconnect can still cancel this task.)
+        try:
+            await self._send(PlaceOrder(team_id=_trader_config.TEAM_ID,
+                                        symbol=signal.symbol, side=signal.side,
+                                        order_type="ioc", price=signal.price,
+                                        quantity=signal.quantity))
+        except Exception:
+            logger.exception("Order send failed: %s %d %s — dropped",
+                             signal.side, signal.quantity, signal.symbol)
+            return
         logger.info("Order: IOC %s %d %s @ %.2f",
                     signal.side, signal.quantity, signal.symbol, signal.price)
 
