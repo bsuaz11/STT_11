@@ -27,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 # ── Strategy settings ────────────────────────────────────────────────────
 # TODO: add your strategy parameters here.
+MIN_EDGE_BPS = 130        # enter only if this much move is left (2 taker fees + spread)
+MR_WINDOW = 30            # ticks of mid history
+MR_Z = 2.0                # enter when mid is this many std devs below the mean
+MR_MIN_EDGE_BPS = MIN_EDGE_BPS  # reversion to the mean must beat 2 taker fees + spread
+MR_SHARES = 50
+MR_STOP_BPS = 150         # cut the trade if bid falls this far below entry
+MR_MAX_HOLD_SEC = 60      # or if it hasn't reverted in this long
+SKIP_SYMBOLS = ("ARENA10",) #not supposed to trade futures 
 
 # ── Earnings-shock settings ──────────────────────────────────────────────
 # On CALENDAR_EVENT the exchange publishes the signed move (pct), then ramps
@@ -48,7 +56,7 @@ SLIP_BPS = 20             # price IOCs this far through the touch so they fill
 SHOCK_SLIP_TICK_FRACTION = 0.75
 SHOCK_SLIP_MAX_BPS = 60
 MAX_ORDER_SHARES = 500    # exchange rejects any single order above this (INVALID_QUANTITY)
-MIN_EDGE_BPS = 130        # enter only if this much move is left (2 taker fees + spread)
+
 EXIT_FRACTION = 0.9       # sell once price covers this much of the move to the peak
 FADE_NEGATIVE = True      # after bad news, buy the overshoot and sell the recovery
 TOKEN_SHARES = 5          # bad news, nothing to dump, too small to fade: still buy this
@@ -70,11 +78,14 @@ ON_EVENT_TIME = 120   # seconds to pause a symbol after an event names it
 IPO_SHARES = 40       # most IPO shares to bid for
 
 
+
 class MyTrader(Trader):
     """Your alpha lives here."""
 
     def __init__(self):
         super().__init__()
+        self._mr: dict[str, dict] = {} #{held, entry, t} for every mean reversion
+        self._preopen = False
         self._bought = {}                         # symbol -> (shares, avg price)
         self._paused = {} #keep track of what stocks are being paused atm
         self._last_mid = {}                       # symbol -> mid at the last tick
@@ -82,14 +93,36 @@ class MyTrader(Trader):
         self._pending: dict[str, float] = {}      # symbol -> time its in-flight order settles
         self._ramp = (15, 1.3)                    # (ramp_ticks, overshoot), updated from CALENDAR_EVENT
         self._starter = {"phase": "buy", "held": 0, "filled_at": 0.0, "wait_until": 0.0}
+        self._books: dict[str, list] = {}   # symbol -> [position, avg_entry, realized]
+        self._mismatch: set[str] = set()
+        self._ipo_px: dict[str, float] = {}
+        self._cash = 0.0
+        self._last_recon = 0.0
+        self._last_status = 0.0
 
     def on_tick(self, market, portfolio) -> Signal | None:
+        """Each tick: refresh state, then shock play > starter > mean reversion."""
+        #pre-shock reference mids
         for sym in market.symbols():
             mid = market.mid_price(sym)
             if mid:
                 self._last_mid[sym] = mid
 
-        # While an earnings shock is live it owns the bot.
+        #bookkeeping checks
+        now = time.monotonic()
+        self._cash = portfolio.cash
+        if now - self._last_recon > 5:
+            self._last_recon = now
+            self._reconcile(market, portfolio)
+        if now - self._last_status > 60:
+            self._last_status = now
+            self._log_status(market, portfolio)
+
+        #venue rejects IOCs until the opening cross
+        if self._preopen:
+            return None
+
+        #while an earnings shock is live it owns the bot
         if self._shocks:
             for sym in list(self._shocks):
                 signal = self._trade_shock(self._shocks[sym], market, portfolio)
@@ -97,38 +130,87 @@ class MyTrader(Trader):
                     return signal
             return None
 
+        #starter order (guaranteed fill + ack)
         if self._starter["phase"] != "done":
             return self._trade_starter(market, portfolio)
 
-        # implement your strategy.
-        #
-        # You can read:
-        #   market.symbols()                    tradeable symbols (may include
-        #                                       futures like ARENA10 — skip them)
-        #   market.mid_price(sym)               current mid price
-        #   market.prices(sym)                  recent mids, oldest first
-        #   market.best_bid/best_ask(sym)       the touch
-        #   portfolio.cash                      your cash
-        #   portfolio.positions                 symbol -> shares held (includes
-        #                                       the shares granted at the open)
-        #   portfolio.can_buy(sym, qty, px)     / can_sell(sym, qty)
-        #   self._bought[sym]                   (shares, avg price) from on_fill
-        #   time.monotonic() < self._paused.get(sym, 0)
-        #                                       True while on_event pauses sym
-        #
-        # Return a Signal(symbol=..., side="buy"/"sell", quantity=..., price=...)
-        # to trade, or None to sit out this tick.
-
+        #mean reversion
         for sym in market.symbols():
-            # Filter tickers
-            if time.monotonic() < self._paused.get(sym, 0):
+            if (sym in SKIP_SYMBOLS or self._is_pending(sym)
+                    or now < self._paused.get(sym, 0)):
                 continue
             bid, ask = market.best_bid(sym), market.best_ask(sym)
-            if bid is None or ask is None:
+            mid = market.mid_price(sym)
+            hist = market.prices(sym)
+            if bid is None or ask is None or not mid or len(hist) < MR_WINDOW:
+                continue                     # also the re-sync guard after a reconnect
+
+            w = hist[-MR_WINDOW:]
+            mean = sum(w) / MR_WINDOW
+            std = (sum((x - mean) ** 2 for x in w) / (MR_WINDOW - 1)) ** 0.5
+            if std == 0:
+                continue
+            z = (mid - mean) / std           # how many std devs the price is from its average
+
+            pos = self._mr.get(sym)
+            if pos is not None:              # exit an open MR trade
+                if pos["held"] <= 0:         # entry IOC missed entirely
+                    self._mr.pop(sym)
+                    continue
+                stopped = bid < pos["entry"] * (1 - MR_STOP_BPS / 1e4)
+                stale = now - pos["t"] > MR_MAX_HOLD_SEC
+                if (bid >= mean or stopped or stale) and portfolio.can_sell(sym, pos["held"]):
+                    px = round(bid * (1 - SLIP_BPS / 1e4), 2)
+                    self._mark_pending(sym)
+                    logger.info("MR exit %s: sell %d @ %.2f (z=%.2f stop=%s stale=%s)",
+                                sym, pos["held"], px, z, stopped, stale)
+                    return Signal(symbol=sym, side="sell", quantity=pos["held"], price=px)
                 continue
 
-
+            buy_px = round(ask * (1 + SLIP_BPS / 1e4), 2)
+            if z < -MR_Z and mean / buy_px - 1 > MR_MIN_EDGE_BPS / 1e4:
+                qty = min(MR_SHARES, self._room(portfolio, sym), MAX_ORDER_SHARES)
+                if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
+                    self._mr[sym] = {"held": 0, "entry": 0.0, "t": now}
+                    self._mark_pending(sym)
+                    logger.info("MR entry %s: buy %d @ %.2f (z=%.2f mean=%.2f)",
+                                sym, qty, buy_px, z, mean)
+                    return Signal(symbol=sym, side="buy", quantity=qty, price=buy_px)
         return None
+
+        
+
+    def _reconcile(self, market, portfolio) -> None:
+        # Adopt the exchange's position when ours disagrees on two checks in a
+        # row: granted shares, IPO allocations, fills missed while disconnected.
+        for sym in set(self._books) | set(portfolio.positions):
+            b = self._books.setdefault(sym, [0, 0.0, 0.0])
+            server = portfolio.positions.get(sym, 0)
+            if b[0] == server:
+                self._mismatch.discard(sym)
+            elif sym in self._mismatch:
+                logger.warning("RECON %s mine=%d exchange=%d — adopting exchange", sym, b[0], server)
+                if server == 0:
+                    b[1] = 0.0
+                elif b[0] == 0:
+                    b[1] = self._ipo_px.get(sym) or market.mid_price(sym) or 0.0
+                b[0] = server
+                self._mismatch.discard(sym)
+            else:
+                self._mismatch.add(sym)
+
+    def _log_status(self, market, portfolio) -> None:
+        real = unreal = 0.0
+        for sym, (pos, avg, r) in sorted(self._books.items()):
+            mid = market.mid_price(sym) or avg
+            u = pos * (mid - avg)
+            real, unreal = real + r, unreal + u
+            if pos or r:
+                logger.info("STATUS %s pos=%d avg=%.4f realized=%+.2f unrealized=%+.2f",
+                            sym, pos, avg, r, u)
+        logger.info("STATUS mine realized=%+.2f unrealized=%+.2f | exchange realized=%+.2f "
+                    "fees=%.2f cash=%.2f", real, unreal, portfolio.realized_pnl,
+                    portfolio.total_fees_paid, portfolio.cash)
 
     def _trade_starter(self, market, portfolio):
         """Buy STARTER_QTY of STARTER_SYMBOL, hold STARTER_HOLD_SEC, sell it
@@ -276,14 +358,31 @@ class MyTrader(Trader):
                     st["phase"], st["filled_at"] = "hold", time.monotonic()
             else:
                 st["held"] = max(0, st["held"] - quantity)
-        shares, avg = self._bought.get(symbol, (0, 0.0))
-        if side == "buy":
-            total = shares + quantity
-            self._bought[symbol] = (total, (shares * avg + quantity * price) / total)
-        elif shares > quantity:
-            self._bought[symbol] = (shares - quantity, avg)
+        #shares that the mean reversion strategy owns
+        m = self._mr.get(symbol)
+        if m is not None:
+            if side == "buy":
+                m["entry"] = (m["entry"] * m["held"] + price * quantity) / (m["held"] + quantity)
+                m["held"] += quantity
+            else:
+                m["held"] = max(0, m["held"] - quantity)
+                if m["held"] == 0:
+                    self._mr.pop(symbol)
+        
+        book = self._books.setdefault(symbol, [0, 0.0, 0.0])   # [position, avg_entry, realized]
+        pos, avg, _ = book
+        signed = quantity if side == "buy" else -quantity
+        if pos == 0 or (pos > 0) == (signed > 0):
+            book[1] = (avg * abs(pos) + price * quantity) / (abs(pos) + quantity)
         else:
-            self._bought.pop(symbol, None)
+            closing = min(quantity, abs(pos))
+            book[2] += closing * (price - avg) * (1 if pos > 0 else -1)
+            if quantity > closing:
+                book[1] = price          # flipped through zero
+            elif pos + signed == 0:
+                book[1] = 0.0
+        book[0] = pos + signed
+        logger.info("BOOK %s pos=%d avg=%.4f realized=%+.2f", symbol, book[0], book[1], book[2])
 
     # shocks, calendar
     def on_event(self, event, message, data):
@@ -308,6 +407,8 @@ class MyTrader(Trader):
                 if abs(pct) >= MIN_SHOCK_PCT:
                     self._start_shock(sym, pct)
             return
+        if event.startswith("IPO_") and data.get("symbol") and data.get("price"):
+            self._ipo_px[data["symbol"]] = float(data["price"])
         ticker = data.get("symbol") if isinstance(data, dict) else None
         if ticker:
             self._paused[ticker] = time.monotonic() + ON_EVENT_TIME
@@ -328,12 +429,16 @@ class MyTrader(Trader):
     #       # An IPO book opened — return qty (bids top of range) or
     #       # (qty, max_price) as your indication, None to pass.
         logger.info("IPO for %s at range %.2f-%.2f, %s shares | %s", symbol, lo, hi, shares, data)
-
-        #get as many ipo shares offered as possible
-        qty = min(shares, IPO_SHARES)
-
-        #capping at midpoint so i won't pay full price
-        return (qty, round((lo + hi) / 2, 2))
+        cash = self._cash or _trader_config.STARTING_CASH   # on_ipo can fire before the first tick
+        qty = min(shares, IPO_SHARES, int(cash * 0.10 / hi)) if hi > 0 else 0
+        if qty <= 0:
+            logger.info("IPO %s: PASS — 10%% of cash (%.2f) can't buy one share at %.2f",
+                        symbol, cash, hi)
+            return None
+        logger.info("IPO %s: bidding %d at top of range %.2f — sized so a 100%% pro-rata "
+                    "fill is <=10%% of cash; we'd rather miss upside than be overloaded "
+                    "if the listing breaks", symbol, qty, hi)
+        return qty
 
     def run(self) -> None:
         logging.basicConfig(level=logging.INFO,
@@ -358,7 +463,10 @@ class _AckTap:
     async def _tap(self):
         async for raw in self._ws:
             if '"order_ack"' in raw:
-                self._bot._on_ack(raw)
+                try:
+                    self._bot._on_ack(raw)
+                except Exception:
+                    logger.exception("ignoring unreadable order_ack")
             yield raw
 
 
@@ -381,8 +489,53 @@ class TakerBot(_AdaptedTraderBot):
             self._portfolio_synced = True
         self.portfolio.apply_server_update = synced_apply
 
+    def _on_ack(self, raw):
+        ack = OrderAck.model_validate_json(raw)
+        if ack.team_id != _trader_config.TEAM_ID:
+            return
+        logger.info("order_ack -> id: %s %s %d %s @ %.2f", ack.order_id, ack.side, ack.quantity, ack.symbol, ack.price)
+
+    async def _on_session_event(self, msg) -> None:
+        if msg.event in ("SESSION_PREOPEN", "SESSION_OPEN"):
+            self._in_session = True
+        elif msg.event == "SESSION_CLOSED":
+            self._in_session = False
+        await super()._on_session_event(msg)      # runs MyTrader.on_event
+
+        # starter runs again when session opens to ensure we make a fill during session
+        if msg.event == "SESSION_PREOPEN":
+            self._owner._preopen = True
+        elif msg.event == "SESSION_OPEN":
+            self._owner._preopen = False
+            self._owner._starter = {"phase": "buy", "held": 0, "filled_at": 0.0, "wait_until": 0.0}
+
+        # React to an earnings print now instead of at the next tick (up to
+        # TICK_INTERVAL_SEC later): the first fills go to whoever is fastest.
+        if (msg.event in ("CALENDAR_EVENT", "SHOCK") and getattr(self._owner, "_shocks", None)
+                and self._session_open):
+            try:
+                signal = self._owner.on_tick(self.market, self.portfolio)
+                if signal is None:
+                    return
+                approved, reason = self.risk.check_order(
+                    signal.symbol, signal.side, signal.quantity, signal.price,
+                    self.portfolio, self.market)
+                if approved:
+                    await self._place_order(signal)
+                else:
+                    logger.info("Order blocked [%s]: %s", signal.symbol, reason)
+            except Exception:
+                logger.exception("on_tick raised on %s — waiting for the tick", msg.event)
+
     def _on_leaderboard(self, msg) -> None:
+        # Reopen the trading gate if we reconnected mid-session.
+        if getattr(self, "_in_session", False) and not self._session_open:
+            self._session_open = True
+            logger.info("Session still live after reconnect — trading gate reopened")
+
         super()._on_leaderboard(msg)
+
+        # Seed cash/positions after a reconnect (no PortfolioUpdate is resent).
         if getattr(self, "_portfolio_synced", True):
             return
         for entry in msg.traders:
@@ -394,40 +547,6 @@ class TakerBot(_AdaptedTraderBot):
                 logger.info("Portfolio seeded from leaderboard: cash=%.2f positions=%s",
                             self.portfolio.cash, self.portfolio.positions)
                 break
-
-    def _on_ack(self, raw):
-        ack = OrderAck.model_validate_json(raw)
-        if ack.team_id != _trader_config.TEAM_ID:
-            return
-        logger.info("order_ack -> id: %s %s %d %s @ %.2f", ack.order_id, ack.side, ack.quantity, ack.symbol, ack.price)
-
-    async def _on_session_event(self, msg) -> None:
-        await super()._on_session_event(msg)      # runs MyTrader.on_event
-        # React to an earnings print now instead of at the next tick (up to
-        # TICK_INTERVAL_SEC later): the first fills go to whoever is fastest.
-        
-        #starter runs again when session opens to ensure we make a fill during session
-        if msg.event == "SESSION_OPEN":
-            self._owner._starter = {"phase": "buy", "held": 0, "filled_at":0.0, "wait_until": 0.0}
-        #only runs when there's a shock
-        if (msg.event in ("CALENDAR_EVENT", "SHOCK") and getattr(self._owner, "_shocks", None)
-                and self._session_open):
-            try:
-                signal = self._owner.on_tick(self.market, self.portfolio)
-                if signal is None:
-                    return
-                approved, reason = self.risk.check_order(
-                                signal.symbol, signal.side, signal.quantity, signal.price,
-                                self.portfolio, self.market)
-                if approved:
-                    await self._place_order(signal)
-                else:
-                    logger.info("Order blocked [%s]: %s", signal.symbol, reason)
-            except Exception:
-                logger.exception("on_tick raised on %s — waiting for the tick", msg.event)
-                
-                
-        
 
     async def flatten_all_positions(self) -> None:
         # The stock bot flattens on SESSION_CLOSED, but the exchange is already
