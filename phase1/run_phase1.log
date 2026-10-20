@@ -1,0 +1,113 @@
+(base) hannahkong@Hannahs-MacBook-Air-1525 STT_11 % make trader TEAM_ID=stt_11_trader_1
+TEAM_ID=stt_11_trader_1 python -m team.trader
+
+╔══════════════════════════════════════════════╗
+║       AlgoArena — Trader Bot                 ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_trader_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Cash:     set at connect  Tick: 0.5s        ║
+╚══════════════════════════════════════════════╝
+
+11:33:05  INFO      Connecting to wss://feed.algoarena-st.duckdns.org (EXCHANGE_URL from the shell)
+11:33:06  INFO      Connected to wss://feed.algoarena-st.duckdns.org as stt_11_trader_1 (trader)
+Tick 1723472  rank=#?  net_worth=$136,256.37  realized_pnl=+28.48
+11:33:06  INFO      Portfolio seeded from leaderboard: cash=111929.69 positions={'AAPL': 12, 'MSFT': -8, 'NVDA': 4, 'TSLA': 4, 'AMZN': 12, 'GOOGL': 12, 'META': 12, 'NFLX': 12, 'AMD': 12, 'INTC': 12}
+11:33:06  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps
+Session: FEE_SCHEDULE — Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps
+11:33:06  INFO      Event: FEE_SCHEDULE | Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps | {'port': 8765, 'taker': 0.003, 'rebate': 0.0005, 'net': 0.0025, 'old': {'taker': 0.003, 'rebate': 0.0005}, 'new': {'taker': 0.003, 'rebate': 0.0005}}
+11:33:06  INFO      Session event: SESSION_OPEN — Session already open — you joined mid-session.
+▶  Session open — trading begins
+11:33:06  INFO      STATUS mine realized=+0.00 unrealized=+0.00 | exchange realized=+0.00 fees=0.00 cash=111929.69
+11:33:06  INFO      Starter buy: 5 MSFT @ 372.37
+11:33:06  INFO      Order: IOC buy 5 MSFT @ 372.37
+11:33:06  INFO      order_ack -> id: 06bf53c1-3a9d-4769-9e1c-ad677567aa32 buy 5 MSFT @ 372.37
+11:33:06  INFO      Fill: bought 5 MSFT @ 371.6300 (fee=2.7872)
+11:33:06  INFO      BOOK MSFT pos=5 avg=371.6300 realized=+0.00
+Tick 1723473  rank=#?  net_worth=$136,250.59  realized_pnl=+220.84
+Tick 1723475  rank=#?  net_worth=$136,250.59  realized_pnl=+220.84
+Tick 1723477  rank=#?  net_worth=$136,251.55  realized_pnl=+220.84
+11:33:11  WARNING   RECON GOOGL mine=0 exchange=12 — adopting exchange
+11:33:11  WARNING   RECON NFLX mine=0 exchange=12 — adopting exchange
+11:33:11  WARNING   RECON AMD mine=0 exchange=12 — adopting exchange
+11:33:11  WARNING   RECON TSLA mine=0 exchange=4 — adopting exchange
+11:33:11  WARNING   RECON AAPL mine=0 exchange=12 — adopting exchange
+11:33:11  WARNING   RECON META mine=0 exchange=12 — adopting exchange
+11:33:11  WARNING   RECON NVDA mine=0 exchange=4 — adopting exchange
+11:33:11  WARNING   RECON INTC mine=0 exchange=12 — adopting exchange
+11:33:11  WARNING   RECON MSFT mine=5 exchange=-3 — adopting exchange
+11:33:11  WARNING   RECON AMZN mine=0 exchange=12 — adopting exchange
+Tick 1723479  rank=#?  net_worth=$136,251.55  realized_pnl=+220.84
+Tick 1723481  rank=#?  net_worth=$136,250.71  realized_pnl=+220.84
+Tick 1723483  rank=#?  net_worth=$136,250.71  realized_pnl=+220.84
+Tick 1723485  rank=#?  net_worth=$136,250.71  realized_pnl=+220.84
+Tick 1723487  rank=#?  net_worth=$136,250.71  realized_pnl=+220.84
+Tick 1723489  rank=#?  net_worth=$136,250.71  realized_pnl=+220.84
+Tick 1723491  rank=#?  net_worth=$136,251.19  realized_pnl=+220.84
+Tick 1723493  rank=#?  net_worth=$136,250.27  realized_pnl=+220.84
+Tick 1723495  rank=#?  net_worth=$136,250.27  realized_pnl=+220.84
+Tick 1723497  rank=#?  net_worth=$136,250.99  realized_pnl=+220.84
+Tick 1723499  rank=#?  net_worth=$136,253.67  realized_pnl=+220.84
+Tick 1723501  rank=#?  net_worth=$136,253.67  realized_pnl=+220.84
+Tick 1723503  rank=#?  net_worth=$136,252.01  realized_pnl=+220.84
+Tick 1723506  rank=#?  net_worth=$136,253.96  realized_pnl=+220.84
+Tick 1723508  rank=#?  net_worth=$136,254.56  realized_pnl=+220.84
+Tick 1723510  rank=#?  net_worth=$136,255.64  realized_pnl=+220.84
+Tick 1723512  rank=#?  net_worth=$136,255.64  realized_pnl=+220.84
+Tick 1723514  rank=#?  net_worth=$136,255.52  realized_pnl=+220.84
+Tick 1723516  rank=#?  net_worth=$136,255.52  realized_pnl=+220.84
+Tick 1723518  rank=#?  net_worth=$136,255.52  realized_pnl=+220.84
+Tick 1723520  rank=#?  net_worth=$136,256.81  realized_pnl=+220.84
+Tick 1723522  rank=#?  net_worth=$136,257.13  realized_pnl=+220.84
+Tick 1723525  rank=#?  net_worth=$136,257.13  realized_pnl=+220.84
+Tick 1723527  rank=#?  net_worth=$136,257.65  realized_pnl=+220.84
+Tick 1723529  rank=#?  net_worth=$136,258.96  realized_pnl=+220.84
+11:34:06  INFO      STATUS AAPL pos=12 avg=200.3050 realized=+0.00 unrealized=-0.72
+11:34:06  INFO      STATUS AMD pos=12 avg=202.7850 realized=+0.00 unrealized=-1.20
+11:34:06  INFO      STATUS AMZN pos=12 avg=195.0900 realized=+0.00 unrealized=-0.18
+11:34:06  INFO      STATUS GOOGL pos=12 avg=148.9100 realized=+0.00 unrealized=+2.76
+11:34:06  INFO      STATUS INTC pos=12 avg=22.3450 realized=+0.00 unrealized=-0.06
+11:34:06  INFO      STATUS META pos=12 avg=851.2450 realized=+0.00 unrealized=+2.88
+11:34:06  INFO      STATUS MSFT pos=-3 avg=371.6300 realized=+0.00 unrealized=+3.43
+11:34:06  INFO      STATUS NFLX pos=12 avg=529.6050 realized=+0.00 unrealized=+1.20
+11:34:06  INFO      STATUS NVDA pos=4 avg=163.3950 realized=+0.00 unrealized=-0.32
+11:34:06  INFO      STATUS TSLA pos=4 avg=216.5700 realized=+0.00 unrealized=+2.60
+11:34:06  INFO      STATUS mine realized=+0.00 unrealized=+10.39 | exchange realized=+220.84 fees=88.10 cash=110065.97
+Tick 1723531  rank=#?  net_worth=$136,259.53  realized_pnl=+220.84
+11:34:44  WARNING   Exchange connection closed: no close frame received or sent — reconnecting in 3s
+11:34:47  WARNING   Could not reach exchange: [Errno 8] nodename nor servname provided, or not known — retrying in 3s
+11:34:50  WARNING   Could not reach exchange: [Errno 8] nodename nor servname provided, or not known — retrying in 3s
+11:34:53  WARNING   Could not reach exchange: [Errno 8] nodename nor servname provided, or not known — retrying in 3s
+11:34:56  WARNING   Could not reach exchange: [Errno 8] nodename nor servname provided, or not known — retrying in 3s
+11:35:01  INFO      Connected to wss://feed.algoarena-st.duckdns.org as stt_11_trader_1 (trader)
+11:35:01  INFO      Session still live after reconnect — trading gate reopened
+Tick 1723584  rank=#?  net_worth=$136,259.06  realized_pnl=+220.84
+11:35:01  INFO      Portfolio seeded from leaderboard: cash=110065.97 positions={'AAPL': 12, 'MSFT': -3, 'NVDA': 4, 'TSLA': 4, 'AMZN': 12, 'GOOGL': 12, 'META': 12, 'NFLX': 12, 'AMD': 12, 'INTC': 12}
+11:35:01  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps
+Session: FEE_SCHEDULE — Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps
+11:35:01  INFO      Event: FEE_SCHEDULE | Venue fee schedule: taker 30.0 bps, maker rebate 5.0 bps | {'port': 8765, 'taker': 0.003, 'rebate': 0.0005, 'net': 0.0025, 'old': {'taker': 0.003, 'rebate': 0.0005}, 'new': {'taker': 0.003, 'rebate': 0.0005}}
+11:35:01  INFO      Session event: SESSION_OPEN — Session already open — you joined mid-session.
+▶  Session open — trading begins
+11:35:02  INFO      Starter buy: 5 MSFT @ 371.95
+11:35:02  INFO      Order: IOC buy 5 MSFT @ 371.95
+11:35:02  INFO      order_ack -> id: cc4772c0-0504-4bbe-b935-ec13a6693b1f buy 5 MSFT @ 371.95
+11:35:02  INFO      Fill: bought 5 MSFT @ 371.2100 (fee=2.7841)
+11:35:02  INFO      BOOK MSFT pos=2 avg=371.2100 realized=+1.26
+Tick 1723585  rank=#?  net_worth=$136,249.89  realized_pnl=+337.52
+Tick 1723587  rank=#?  net_worth=$136,252.53  realized_pnl=+337.52
+Tick 1723589  rank=#?  net_worth=$136,251.73  realized_pnl=+337.52
+11:35:07  INFO      STATUS AAPL pos=12 avg=200.3050 realized=+0.00 unrealized=-0.72
+11:35:07  INFO      STATUS AMD pos=12 avg=202.7850 realized=+0.00 unrealized=-0.48
+11:35:07  INFO      STATUS AMZN pos=12 avg=195.0900 realized=+0.00 unrealized=-1.98
+11:35:07  INFO      STATUS GOOGL pos=12 avg=148.9100 realized=+0.00 unrealized=+6.42
+11:35:07  INFO      STATUS INTC pos=12 avg=22.3450 realized=+0.00 unrealized=-0.54
+11:35:07  INFO      STATUS META pos=12 avg=851.2450 realized=+0.00 unrealized=+2.64
+11:35:07  INFO      STATUS MSFT pos=2 avg=371.2100 realized=+1.26 unrealized=-1.72
+11:35:07  INFO      STATUS NFLX pos=12 avg=529.6050 realized=+0.00 unrealized=+0.60
+11:35:07  INFO      STATUS NVDA pos=4 avg=163.3950 realized=+0.00 unrealized=-0.16
+11:35:07  INFO      STATUS TSLA pos=4 avg=216.5700 realized=+0.00 unrealized=+2.30
+11:35:07  INFO      STATUS mine realized=+1.26 unrealized=+6.36 | exchange realized=+337.52 fees=93.67 cash=108204.35
+Tick 1723591  rank=#?  net_worth=$136,251.47  realized_pnl=+337.52
+Tick 1723593  rank=#?  net_worth=$136,251.47  realized_pnl=+337.52
+Tick 1723595  rank=#?  net_worth=$136,251.47  realized_pnl=+337.52
+Tick 1723597  rank=#?  net_worth=$136,251.21  realized_pnl=+337.52
