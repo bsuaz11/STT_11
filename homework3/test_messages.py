@@ -1,5 +1,5 @@
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from messages import (Handshake, CancelOrder, PlaceOrder, 
                       OrderAck, BookSnapshot, Message)
 ADAPTER = TypeAdapter(Message) 
@@ -130,3 +130,46 @@ def test_dispatch_every_model(m):
     back = ADAPTER.validate_json(m.model_dump_json())
     assert type(back) is type(m)
     assert back == m 
+
+# Negative tests: bad payloads must be rejected, and for the right reason.
+# Each payload is valid except for the ONE thing being tested, and we assert
+# on the error's type code and location (not just that *some* error happened).
+def test_reject_quantity_zero():
+    raw = '{"type":"place_order","team_id":"t1","symbol":"AAPL","side":"buy","quantity":0}'
+    with pytest.raises(ValidationError) as exc:
+        ADAPTER.validate_json(raw)
+    errors = exc.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "greater_than"
+    assert errors[0]["loc"] == ("place_order", "quantity")
+
+# missing field: a cancel_order with no order_id
+def test_reject_missing_field():
+    raw = '{"type":"cancel_order","team_id":"t1","symbol":"AAPL"}'
+    with pytest.raises(ValidationError) as exc:
+        ADAPTER.validate_json(raw)
+    errors = exc.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "missing"
+    assert errors[0]["loc"] == ("cancel_order", "order_id")
+
+# wrong type: quantity is text that can't be read as a number
+def test_reject_wrong_type():
+    raw = '{"type":"place_order","team_id":"t1","symbol":"AAPL","side":"buy","quantity":"ten"}'
+    with pytest.raises(ValidationError) as exc:
+        ADAPTER.validate_json(raw)
+    errors = exc.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "int_parsing"
+    assert errors[0]["loc"] == ("place_order", "quantity")
+
+# unknown tag: the sorter fails before picking a model, so loc is empty
+def test_reject_unknown_type_tag():
+    raw = '{"type":"pizza","team_id":"t1"}'
+    with pytest.raises(ValidationError) as exc:
+        ADAPTER.validate_json(raw)
+    errors = exc.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["type"] == "union_tag_invalid"
+    assert errors[0]["loc"] == ()
+    assert "pizza" in str(exc.value)
