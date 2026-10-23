@@ -14,7 +14,9 @@ Run one seat:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
 
 import trader.config as _trader_config
@@ -42,13 +44,17 @@ SKIP_SYMBOLS = ("ARENA10",) #not supposed to trade futures
 # over about half as many again (docs/SEASON_GUIDE.md §6).
 EXCHANGE_TICK_SEC = 1.0   # the exchange advances prices once per second
 SHOCK_SHARES = 550        # most shares to hold in a shock symbol
-POSITION_LIMIT = 600      # exchange per-symbol cap (week 3: 600) — over it is rejected
+POSITION_LIMIT = 800      # exchange per-symbol cap (week 4: 800) — over it is rejected;
+                          # replaced at SESSION_OPEN by the scenario's position_limit
 POSITION_BUFFER = 20      # stay this far under POSITION_LIMIT
-# The limit is per TEAM and counts the broker seat too. team/broker.py holds at
-# most BROKER_MAX_SHARES (position + resting bids) in any symbol it quotes, and
-# never quotes BROKER_SKIP_SYMBOLS — keep both in sync with team/broker.py.
+# The limit is per TEAM and counts every seat. team/broker.py holds at most
+# BROKER_MAX_SHARES long (position + resting bids) and BROKER_MAX_SHORT short
+# (position − resting asks) in any symbol it quotes, and never quotes
+# BROKER_SKIP_SYMBOLS — keep all three in sync with team/broker.py. The live
+# block runs ONE broker seat; with two, double both BROKER_ numbers.
 BROKER_MAX_SHARES = 150
-BROKER_SKIP_SYMBOLS = ("NVDA", "TSLA")
+BROKER_MAX_SHORT = 150
+BROKER_SKIP_SYMBOLS = ()
 SLIP_BPS = 20             # price IOCs this far through the touch so they fill
 # Shock IOCs reach further: the ramp moves |pct| x overshoot / ramp_ticks per
 # tick (26-78 bps for these prints), so 20 bps only reaches the top level or
@@ -59,6 +65,44 @@ MAX_ORDER_SHARES = 500    # exchange rejects any single order above this (INVALI
 
 EXIT_FRACTION = 0.9       # sell once price covers this much of the move to the peak
 FADE_NEGATIVE = True      # after bad news, buy the overshoot and sell the recovery
+
+# ── Shorting the shock (week 4+: shorts unlock) ──────────────────────────
+# Bad news: short on the first ticks of the drop, cover near the overshoot low.
+# Good news: after the long exits near the peak, short the overshoot and cover
+# as it settles back to 1.0 × pct. The broker never shorts and stops quoting a
+# symbol once its print is announced, so the team cap is the trader's to use.
+SHORT_SHARES = 400        # most shares to be short in a shock symbol (borrow is
+                          # capped at 2,000/symbol across the whole market)
+FADE_POSITIVE = True      # after good news, short the overshoot peak
+# Short-sale rule: once a symbol is SSR_TRIGGER_PCT below the session open, a
+# short that hits the bid is rejected (SSR_RESTRICTED). Stop opening shorts
+# this far before the trigger; covering is always allowed.
+SSR_TRIGGER_PCT = 0.06    # week 4 value; replaced at SESSION_OPEN from the scenario
+SSR_MARGIN_PCT = 0.01
+SHORT_REJECTS = ("SHORTS_LOCKED", "SSR_RESTRICTED", "BORROW_UNAVAILABLE")
+# Borrow is capped market-wide (SHORT_LOCATE_CAP, from the scenario). Only
+# open a short while short interest, read from the leaderboard every ~2 s,
+# leaves room for it plus this much from shorts placed since.
+SHORT_LOCATE_CAP = 2000
+BORROW_HEADROOM = 300
+
+# ── Seat roles ───────────────────────────────────────────────────────────
+# Every trader seat runs this file; TEAM_ID picks what it does. Seats split
+# the team's per-symbol cap instead of racing each other for it:
+#   shock    earnings / teacher-shock play     (up to SHOCK_SHARES long,
+#                                               SHORT_SHARES short)
+#   starter  one guaranteed buy-then-sell after the open
+#   mr       mean reversion, MR_SHARES long per symbol
+#   ipo      bid in IPO bookbuilds
+# A seat not listed here trades nothing. TRADER_ROLES="shock,mr" overrides
+# (for local testing).
+SEAT_ROLES = {
+    "stt_11_trader_1": {"shock", "starter", "ipo"},
+    "stt_11_trader_2": {"mr", "ipo"},
+}
+# Longs other seats may hold in a shock symbol on top of the broker: trader_2's
+# one mean-reversion position. Keeps the team under the cap on good news.
+OTHER_SEAT_SHARES = MR_SHARES
 TOKEN_SHARES = 5          # bad news, nothing to dump, too small to fade: still buy this
                           # many at the low, so every shock gets an order (graded)
 MIN_SHOCK_PCT = 0.005     # ignore teacher SHOCK moves smaller than this
@@ -96,6 +140,18 @@ class MyTrader(Trader):
         self._books: dict[str, list] = {}   # symbol -> [position, avg_entry, realized]
         self._mismatch: set[str] = set()
         self._ipo_px: dict[str, float] = {}
+        roles = os.environ.get("TRADER_ROLES")
+        self._roles = (set(r.strip() for r in roles.split(",") if r.strip()) if roles
+                       else SEAT_ROLES.get(_trader_config.TEAM_ID, set()))
+        logger.info("Seat %s roles: %s", _trader_config.TEAM_ID,
+                    ", ".join(sorted(self._roles)) or "NONE — this seat will not trade")
+        self._shorts_ok = False                   # set from the scenario at SESSION_OPEN
+        self._limit = POSITION_LIMIT
+        self._ssr_pct = SSR_TRIGGER_PCT
+        self._locate_cap = SHORT_LOCATE_CAP
+        self._short_interest: dict[str, int] = {} # symbol -> market-wide shares short
+        self._ssr: set[str] = set()               # symbols under the short-sale rule
+        self._open_mid: dict[str, float] = {}     # symbol -> first mid after the open
         self._cash = 0.0
         self._last_recon = 0.0
         self._last_status = 0.0
@@ -121,6 +177,8 @@ class MyTrader(Trader):
         #venue rejects IOCs until the opening cross
         if self._preopen:
             return None
+        for sym, mid in self._last_mid.items():   # SSR is measured from the open
+            self._open_mid.setdefault(sym, mid)
 
         #while an earnings shock is live it owns the bot
         if self._shocks:
@@ -131,10 +189,12 @@ class MyTrader(Trader):
             return None
 
         #starter order (guaranteed fill + ack)
-        if self._starter["phase"] != "done":
+        if "starter" in self._roles and self._starter["phase"] != "done":
             return self._trade_starter(market, portfolio)
 
         #mean reversion
+        if "mr" not in self._roles:
+            return None
         for sym in market.symbols():
             if (sym in SKIP_SYMBOLS or self._is_pending(sym)
                     or now < self._paused.get(sym, 0)):
@@ -244,9 +304,10 @@ class MyTrader(Trader):
         return None
 
     def _trade_shock(self, s, market, portfolio):
-        """One step of the earnings play. Good news: buy on the first ticks
-        and sell into the overshoot. Bad news (long-only): dump what we hold,
-        then optionally buy the overshoot low and sell the recovery."""
+        """One step of the earnings play. Good news: buy on the first ticks,
+        sell into the overshoot, then short the peak and cover on the settle.
+        Bad news: dump what we hold and go short on the first ticks, cover
+        near the overshoot low, then buy the low and sell the recovery."""
         now = time.monotonic()
         sym, pct = s["symbol"], s["pct"]
         bid, ask = market.best_bid(sym), market.best_ask(sym)
@@ -268,26 +329,60 @@ class MyTrader(Trader):
         buy_px = round(ask * (1 + slip / 1e4), 2) if ask is not None else None
         sell_px = round(bid * (1 - slip / 1e4), 2) if bid is not None else None
 
+        pos = portfolio.positions.get(sym, 0)
+
         if pct > 0:
-            # Ride the ramp: exit near the peak, or when the ramp is over.
-            if s["held"] > 0 and sell_px and (bid >= ref + EXIT_FRACTION * (peak - ref)
-                                              or elapsed >= ramp):
-                return self._shock_order(s, sym, "sell", s["held"], sell_px, "exit ramp")
-            leftover_room = self._room(portfolio, sym)
-            if (leftover_room > 0 and buy_px and elapsed < ramp / 2
-                    and peak / buy_px - 1 > MIN_EDGE_BPS / 1e4):
-                qty = min(leftover_room, int(portfolio.cash * 0.95 / buy_px))
-                if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
-                    return self._shock_order(s, sym, "buy", qty, buy_px, "ride ramp")
-            if s["held"] == 0 and elapsed >= ramp / 2:
+            if s["phase"] == "open":
+                # Ride the ramp: exit near the peak, or when the ramp is over.
+                if s["held"] > 0 and sell_px and (bid >= ref + EXIT_FRACTION * (peak - ref)
+                                                  or elapsed >= ramp):
+                    return self._shock_order(s, sym, "sell", s["held"], sell_px, "exit ramp")
+                leftover_room = self._room(portfolio, sym)
+                if (leftover_room > 0 and buy_px and elapsed < ramp / 2
+                        and peak / buy_px - 1 > MIN_EDGE_BPS / 1e4):
+                    qty = min(leftover_room, int(portfolio.cash * 0.95 / buy_px))
+                    if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
+                        return self._shock_order(s, sym, "buy", qty, buy_px, "ride ramp")
+                if s["held"] > 0 or elapsed < ramp / 2:
+                    return None
+                if not (FADE_POSITIVE and peak / settle - 1 > MIN_EDGE_BPS / 1e4):
+                    self._end_shock(sym)
+                    return None
+                s["phase"] = "top"
+
+            # Short the overshoot peak, cover once it settles back.
+            if pos < 0:
+                if buy_px and (ask <= settle * (1 + SLIP_BPS / 1e4) or elapsed >= ramp * 1.5 + 2):
+                    return self._cover(s, sym, -pos, buy_px, portfolio, "cover top")
+                return None
+            want = pos + self._short_target()
+            if (want > 0 and sell_px and ramp - 2 <= elapsed < ramp + 2 and not s["shorted"]
+                    and self._may_short(s, sym, bid)
+                    and sell_px / settle - 1 > MIN_EDGE_BPS / 1e4):
+                s["shorted"] = True               # one entry; a partial fill is still covered
+                return self._shock_order(s, sym, "sell", want, sell_px, "short top")
+            if elapsed >= ramp + 2:
                 self._end_shock(sym)
             return None
 
-        # Bad news. Step 1: sell everything we hold, granted shares included.
-        if s["phase"] == "dump":
-            held = portfolio.positions.get(sym, 0)
-            if held > 0 and sell_px and portfolio.can_sell(sym, held):
-                return self._shock_order(s, sym, "sell", held, sell_px, "dump")
+        # Bad news. Step 1: sell everything we hold, granted shares included,
+        # and go short while the drop still has room to run.
+        if s["phase"] == "open":
+            want = max(pos, 0)
+            if (sell_px and elapsed < ramp / 2 and self._may_short(s, sym, bid)
+                    and sell_px / peak - 1 > MIN_EDGE_BPS / 1e4):
+                want = pos + self._short_target()
+            if want > 0 and sell_px:
+                return self._shock_order(s, sym, "sell", want, sell_px,
+                                         "short" if want > max(pos, 0) else "dump")
+            s["phase"] = "cover"
+
+        # Step 2: cover the short near the overshoot low (or when the ramp ends).
+        if s["phase"] == "cover":
+            if pos < 0:
+                if buy_px and (ask <= ref + EXIT_FRACTION * (peak - ref) or elapsed >= ramp):
+                    return self._cover(s, sym, -pos, buy_px, portfolio, "cover low")
+                return None
             bounce = settle / peak - 1            # overshoot low back to settle
             if FADE_NEGATIVE and bounce > MIN_EDGE_BPS / 1e4:
                 s["phase"] = "fade"
@@ -319,8 +414,51 @@ class MyTrader(Trader):
     def _room(self, portfolio, sym):
         """Shares we may still buy in sym without nearing the exchange cap."""
         broker = 0 if sym in BROKER_SKIP_SYMBOLS else BROKER_MAX_SHARES
-        cap = min(SHOCK_SHARES, POSITION_LIMIT - POSITION_BUFFER - broker)
+        cap = min(SHOCK_SHARES, self._limit - POSITION_BUFFER - broker - OTHER_SEAT_SHARES)
         return cap - portfolio.positions.get(sym, 0)
+
+    def _short_target(self):
+        """Most shares to be short in one symbol. Only the broker can be short
+        alongside us (mean reversion is long-only)."""
+        return max(0, min(SHORT_SHARES, self._limit - POSITION_BUFFER - BROKER_MAX_SHORT))
+
+    def _may_short(self, s, sym, bid):
+        """True if a new short in sym should get past the venue: shorts are
+        unlocked, no short was rejected this shock, and the symbol is not under
+        (or about to trip) the short-sale rule."""
+        if not self._shorts_ok or s["no_short"] or sym in self._ssr or bid is None:
+            return False
+        if (self._short_interest.get(sym, 0) + self._short_target() + BORROW_HEADROOM
+                > self._locate_cap):
+            return False
+        open_mid = self._open_mid.get(sym) or s["ref_mid"]
+        return bid > open_mid * (1 - self._ssr_pct + SSR_MARGIN_PCT)
+
+    def _cover(self, s, sym, short, buy_px, portfolio, why):
+        qty = min(short, int(portfolio.cash * 0.95 / buy_px))
+        if qty > 0 and portfolio.can_buy(sym, qty, buy_px):
+            return self._shock_order(s, sym, "buy", qty, buy_px, why)
+        return None
+
+    def on_open(self, data):
+        """SESSION_OPEN: adopt the week's rules from the scenario it carries."""
+        sc = data.get("scenario") or {}
+        self._shorts_ok = bool((sc.get("flags") or {}).get("shorts_allowed", False))
+        self._limit = int(sc.get("position_limit") or self._limit)
+        cfg = sc.get("config") or {}
+        self._ssr_pct = float(cfg.get("SSR_TRIGGER_PCT", self._ssr_pct))
+        self._locate_cap = int(cfg.get("SHORT_LOCATE_CAP", self._locate_cap))
+        if not data.get("late_join"):             # SSR is sticky until the next open
+            self._ssr.clear()
+            self._open_mid.clear()
+        logger.info("Session rules: shorts=%s limit=%d SSR=%.1f%%",
+                    self._shorts_ok, self._limit, self._ssr_pct * 100)
+
+    def on_reject(self, code, message):
+        logger.warning("REJECT [%s]: %s", code, message)
+        if code in SHORT_REJECTS:                 # one reject per shock, never a streak
+            for s in self._shocks.values():
+                s["no_short"] = True
 
     def _is_pending(self, sym):
         """True while an order in sym may still have fills on the way, so
@@ -348,8 +486,12 @@ class MyTrader(Trader):
         if self._is_pending(symbol):             # an IOC fills at once; let its other fills land
             self._pending[symbol] = min(self._pending[symbol], time.monotonic() + FILL_SETTLE_SEC)
         s = self._shocks.get(symbol)
-        if s:                                    # shares the shock play owns
-            s["held"] = s["held"] + quantity if side == "buy" else max(0, s["held"] - quantity)
+        if s:                                    # shares the shock play owns (a buy
+            if side == "buy":                    # covers any short before adding)
+                covered = min(quantity, max(0, -self._books.get(symbol, [0])[0]))
+                s["held"] += quantity - covered
+            else:
+                s["held"] = max(0, s["held"] - quantity)
         st = self._starter
         if st["phase"] != "done" and symbol == STARTER_SYMBOL:
             if side == "buy":
@@ -407,6 +549,8 @@ class MyTrader(Trader):
                 if abs(pct) >= MIN_SHOCK_PCT:
                     self._start_shock(sym, pct)
             return
+        if event == "SSR_ON" and data.get("symbol"):
+            self._ssr.add(data["symbol"])
         if event.startswith("IPO_") and data.get("symbol") and data.get("price"):
             self._ipo_px[data["symbol"]] = float(data["price"])
         ticker = data.get("symbol") if isinstance(data, dict) else None
@@ -414,6 +558,12 @@ class MyTrader(Trader):
             self._paused[ticker] = time.monotonic() + ON_EVENT_TIME
 
     def _start_shock(self, sym, pct):
+        if "shock" not in self._roles:
+            # Another seat trades the print; keep mean reversion out of the
+            # ramp, which looks like a huge z-score but keeps going.
+            self._paused[sym] = time.monotonic() + ON_EVENT_TIME
+            logger.info("Shock in %s: not this seat's play — pausing it", sym)
+            return
         old = self._shocks.get(sym)                   # a second move in sym keeps its shares
         self._shocks[sym] = {"symbol": sym, "pct": pct,
                              "fired": time.monotonic(),
@@ -421,15 +571,18 @@ class MyTrader(Trader):
                              "ramp_ticks": self._ramp[0],
                              "overshoot": self._ramp[1],
                              "held": old["held"] if old else 0,
-                             "phase": "dump", "wait_until": 0.0,
-                             "acted": False, "token": False, "bought": False}
+                             "phase": "open", "wait_until": 0.0,
+                             "acted": False, "token": False, "bought": False,
+                             "shorted": False, "no_short": False}
         logger.info("Shock start: %s %+.2f%%", sym, pct * 100)
 
     def on_ipo(self, symbol, lo, hi, shares, data):
     #       # An IPO book opened — return qty (bids top of range) or
     #       # (qty, max_price) as your indication, None to pass.
         logger.info("IPO for %s at range %.2f-%.2f, %s shares | %s", symbol, lo, hi, shares, data)
-        cash = self._cash or _trader_config.STARTING_CASH   # on_ipo can fire before the first tick
+        if "ipo" not in self._roles:
+            return None
+        cash =self._cash or _trader_config.STARTING_CASH   # on_ipo can fire before the first tick
         qty = min(shares, IPO_SHARES, int(cash * 0.10 / hi)) if hi > 0 else 0
         if qty <= 0:
             logger.info("IPO %s: PASS — 10%% of cash (%.2f) can't buy one share at %.2f",
@@ -445,6 +598,17 @@ class MyTrader(Trader):
                             format="%(asctime)s  %(levelname)-8s  %(message)s",
                             datefmt="%H:%M:%S")
         asyncio.run(TakerBot(self).run())
+
+
+def short_interest(leaderboard) -> dict[str, int]:
+    """Shares short per symbol across every seat on the leaderboard — what
+    the venue's borrow cap is measured against."""
+    out: dict[str, int] = {}
+    for entry in list(leaderboard.traders or []) + list(leaderboard.brokers or []):
+        for sym, qty in (entry.get("positions") or {}).items():
+            if qty < 0:
+                out[sym] = out.get(sym, 0) - int(qty)
+    return out
 
 
 class _AckTap:
@@ -467,6 +631,13 @@ class _AckTap:
                     self._bot._on_ack(raw)
                 except Exception:
                     logger.exception("ignoring unreadable order_ack")
+            elif '"error"' in raw:
+                try:
+                    msg = json.loads(raw)
+                    if msg.get("type") == "error":
+                        self._bot._owner.on_reject(msg.get("code"), msg.get("message"))
+                except Exception:
+                    logger.exception("ignoring unreadable error")
             yield raw
 
 
@@ -507,6 +678,7 @@ class TakerBot(_AdaptedTraderBot):
             self._owner._preopen = True
         elif msg.event == "SESSION_OPEN":
             self._owner._preopen = False
+            self._owner.on_open(msg.data or {})
             self._owner._starter = {"phase": "buy", "held": 0, "filled_at": 0.0, "wait_until": 0.0}
 
         # React to an earnings print now instead of at the next tick (up to
@@ -534,6 +706,7 @@ class TakerBot(_AdaptedTraderBot):
             logger.info("Session still live after reconnect — trading gate reopened")
 
         super()._on_leaderboard(msg)
+        self._owner._short_interest = short_interest(msg)
 
         # Seed cash/positions after a reconnect (no PortfolioUpdate is resent).
         if getattr(self, "_portfolio_synced", True):
