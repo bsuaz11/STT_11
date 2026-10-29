@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 
 import trader.config as _trader_config
@@ -24,6 +25,7 @@ from shared.messages import OrderAck, PlaceOrder, Signal
 
 from arena import Trader
 from arena.trader import _AdaptedTraderBot
+from team.config import CAPITAL
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +123,33 @@ STARTER_HOLD_SEC = 10     # hold this long after the buy fills, then sell
 ON_EVENT_TIME = 120   # seconds to pause a symbol after an event names it
 IPO_SHARES = 40       # most IPO shares to bid for
 
+# ── Week 5 risk: halts, LULD band, liquidation ───────────────────────────
+# Every order passes _gate() (called from TakerBot._place_order, the one
+# place orders leave the bot), which shrinks or drops it so that:
+#   - this seat stays inside _seat_caps() in every symbol, counting IOCs
+#     still in flight, and the TEAM (other seats from the leaderboard) stays
+#     inside position_limit − POSITION_BUFFER
+#   - gross notional stays ≤ MAX_GROSS_LEVERAGE × net worth, so even a 30%
+#     move against the whole book can't reach the liquidation line
+#   - below RISK_OFF_MARGIN above the maintenance line only orders that
+#     shrink a position go out, and _risk_off_signal() flattens the largest
+#   - nothing is sent into a halted symbol (the venue would reject it)
+#   - limit prices sit inside the LULD band around the venue mark
+# A halt's ramp keeps running while the symbol is frozen: the shock play
+# holds through it and unwinds on TRADING_RESUMED. After every resume the
+# starter seat buys and sells STARTER_QTY in that symbol, so the bot
+# visibly trades it again.
+MAINTENANCE_FRACTION = 0.5  # week 5; replaced at SESSION_OPEN from the scenario
+RISK_OFF_MARGIN = 0.20      # go reduce-only this far above the maintenance line
+MAX_GROSS_LEVERAGE = 1.5
+LULD_BAND_PCT = 0.08        # week 5; replaced at SESSION_OPEN from the scenario
+LULD_MARGIN_PCT = 0.005     # keep limit prices this far inside the band
+HALT_FALLBACK_SEC = 300     # halt length to assume if the event didn't say
+HALT_SLACK_SEC = 5          # past resume_at, assume we missed TRADING_RESUMED
+RESUME_PROBE_DELAY_SEC = 3  # let the book refill before the probe buy
+INFLIGHT_SEC = 2.0          # an IOC's fills land well inside this
+OWN_TEAM_PREFIX = "stt_11_"
+
 
 
 class MyTrader(Trader):
@@ -136,7 +165,8 @@ class MyTrader(Trader):
         self._shocks: dict[str, dict] = {}        # symbol -> earnings shock being traded
         self._pending: dict[str, float] = {}      # symbol -> time its in-flight order settles
         self._ramp = (15, 1.3)                    # (ramp_ticks, overshoot), updated from CALENDAR_EVENT
-        self._starter = {"phase": "buy", "held": 0, "filled_at": 0.0, "wait_until": 0.0}
+        self._starter = new_starter(STARTER_SYMBOL)
+        self._probes: list[str] = []              # symbols to probe once the starter is free
         self._books: dict[str, list] = {}   # symbol -> [position, avg_entry, realized]
         self._mismatch: set[str] = set()
         self._ipo_px: dict[str, float] = {}
@@ -155,6 +185,17 @@ class MyTrader(Trader):
         self._cash = 0.0
         self._last_recon = 0.0
         self._last_status = 0.0
+        # Risk state for _gate()
+        self._maint = MAINTENANCE_FRACTION
+        self._luld = LULD_BAND_PCT
+        self._start_equity: float | None = None   # set from the first leaderboard
+        self._ref: dict[str, float] = {}          # symbol -> venue mark (BookSnapshot.ref_price)
+        self._halted: dict[str, float] = {}       # symbol -> wall-clock time it should resume
+        self._market_halt_until = 0.0             # wall clock; 0 = no market-wide halt
+        self._inflight: list[list] = []           # [sent_at, symbol, side, unfilled qty]
+        self._team_others: dict[str, int] = {}    # symbol -> other team seats' position
+        self._liquidated = False
+        self._risk_off = False
 
     def on_tick(self, market, portfolio) -> Signal | None:
         """Each tick: refresh state, then shock play > starter > mean reversion."""
@@ -175,28 +216,40 @@ class MyTrader(Trader):
             self._log_status(market, portfolio)
 
         #venue rejects IOCs until the opening cross
-        if self._preopen:
+        if self._preopen or self._liquidated:
             return None
         for sym, mid in self._last_mid.items():   # SSR is measured from the open
             self._open_mid.setdefault(sym, mid)
 
-        #while an earnings shock is live it owns the bot
-        if self._shocks:
-            for sym in list(self._shocks):
-                signal = self._trade_shock(self._shocks[sym], market, portfolio)
-                if signal is not None:
-                    return signal
-            return None
+        #near the liquidation line: only shrink the book
+        self._risk_off = self._equity(market, portfolio) < self._risk_off_level()
+        if self._risk_off:
+            return self._risk_off_signal(market, portfolio)
 
-        #starter order (guaranteed fill + ack)
-        if "starter" in self._roles and self._starter["phase"] != "done":
-            return self._trade_starter(market, portfolio)
+        #an earnings shock gets first call on every tick (halted ones wait)
+        for sym in [s for s in self._shocks if not self._is_halted(s)]:
+            signal = self._trade_shock(self._shocks[sym], market, portfolio)
+            if signal is not None:
+                return signal
+
+        #starter order (guaranteed fill + ack), then one probe per resumed
+        #halt — never in a symbol a shock is still trading (its fills would
+        #land in the shock's share count)
+        if "starter" in self._roles:
+            if self._starter["phase"] == "done":
+                ready = [s for s in self._probes if s not in self._shocks]
+                if ready:
+                    self._probes.remove(ready[0])
+                    self._starter = new_starter(ready[0], now + RESUME_PROBE_DELAY_SEC)
+                    logger.info("Resume probe: round trip of %d %s", STARTER_QTY, ready[0])
+            if self._starter["phase"] != "done" and self._starter["symbol"] not in self._shocks:
+                return self._trade_starter(market, portfolio)
 
         #mean reversion
         if "mr" not in self._roles:
             return None
         for sym in market.symbols():
-            if (sym in SKIP_SYMBOLS or self._is_pending(sym)
+            if (sym in SKIP_SYMBOLS or self._is_pending(sym) or self._is_halted(sym)
                     or now < self._paused.get(sym, 0)):
                 continue
             bid, ask = market.best_bid(sym), market.best_ask(sym)
@@ -273,12 +326,13 @@ class MyTrader(Trader):
                     portfolio.total_fees_paid, portfolio.cash)
 
     def _trade_starter(self, market, portfolio):
-        """Buy STARTER_QTY of STARTER_SYMBOL, hold STARTER_HOLD_SEC, sell it
-        back. IOCs that miss are retried on a later tick."""
-        s, sym = self._starter, STARTER_SYMBOL
+        """Buy STARTER_QTY of the starter's symbol, hold STARTER_HOLD_SEC, sell
+        it back. IOCs that miss are retried on a later tick."""
+        s, sym = self._starter, self._starter["symbol"]
         now = time.monotonic()
         bid, ask = market.best_bid(sym), market.best_ask(sym)
-        if bid is None or ask is None or now < s["wait_until"] or self._is_pending(sym):
+        if (bid is None or ask is None or now < s["wait_until"] or self._is_pending(sym)
+                or self._is_halted(sym)):
             return None
 
         if s["phase"] == "buy":
@@ -288,6 +342,7 @@ class MyTrader(Trader):
                 self._mark_pending(sym)
                 logger.info("Starter buy: %d %s @ %.2f", STARTER_QTY, sym, price)
                 return Signal(symbol=sym, side="buy", quantity=STARTER_QTY, price=price)
+            s["phase"] = "done"                   # can't afford even this: skip it
         elif s["phase"] == "hold" and now - s["filled_at"] >= STARTER_HOLD_SEC:
             s["phase"] = "sell"
         if s["phase"] == "sell":
@@ -413,14 +468,144 @@ class MyTrader(Trader):
 
     def _room(self, portfolio, sym):
         """Shares we may still buy in sym without nearing the exchange cap."""
-        broker = 0 if sym in BROKER_SKIP_SYMBOLS else BROKER_MAX_SHARES
-        cap = min(SHOCK_SHARES, self._limit - POSITION_BUFFER - broker - OTHER_SEAT_SHARES)
-        return cap - portfolio.positions.get(sym, 0)
+        return self._seat_caps(sym)[0] - portfolio.positions.get(sym, 0)
 
     def _short_target(self):
         """Most shares to be short in one symbol. Only the broker can be short
         alongside us (mean reversion is long-only)."""
         return max(0, min(SHORT_SHARES, self._limit - POSITION_BUFFER - BROKER_MAX_SHORT))
+
+    # ── Hard limits ─────────────────────────────────────────────────────
+    def _seat_caps(self, sym):
+        """(most shares long, most shares short) THIS seat may hold in sym.
+        Shock seat + mean-reversion seat + broker add up to at most
+        position_limit − POSITION_BUFFER."""
+        if "shock" in self._roles:
+            broker = 0 if sym in BROKER_SKIP_SYMBOLS else BROKER_MAX_SHARES
+            long_cap = min(SHOCK_SHARES, self._limit - POSITION_BUFFER - broker - OTHER_SEAT_SHARES)
+            return max(0, long_cap), self._short_target()
+        if "mr" in self._roles:
+            return OTHER_SEAT_SHARES, 0
+        return (STARTER_QTY if "starter" in self._roles else 0), 0
+
+    def _mark(self, sym, market):
+        return (self._ref.get(sym) or market.mid_price(sym)
+                or self._books.get(sym, [0, 0.0])[1] or 0.0)
+
+    def _equity(self, market, portfolio):
+        """Net worth marked at the venue reference — what the exchange's
+        maintenance check uses."""
+        return portfolio.cash + sum(q * self._mark(s, market)
+                                    for s, q in portfolio.positions.items() if q)
+
+    def _capital(self):
+        """What the venue's maintenance check is measured against: the
+        registered allocation, or the first net worth the leaderboard showed
+        this session if that is lower (a local venue, or a seat that lost
+        money in an earlier session)."""
+        capital = float(CAPITAL.get(_trader_config.TEAM_ID, _trader_config.STARTING_CASH))
+        return capital if self._start_equity is None else min(capital, self._start_equity)
+
+    def _risk_off_level(self):
+        return self._capital() * (self._maint + RISK_OFF_MARGIN)
+
+    def _risk_off_signal(self, market, portfolio):
+        """Near the liquidation line: IOC out of the biggest position."""
+        held = sorted(((abs(q) * self._mark(s, market), s, q)
+                       for s, q in portfolio.positions.items()
+                       if q and not self._is_halted(s) and not self._is_pending(s)),
+                      reverse=True)
+        for _, sym, qty in held:
+            bid, ask = market.best_bid(sym), market.best_ask(sym)
+            if qty > 0 and bid:
+                px, side = round(bid * (1 - SLIP_BPS / 1e4), 2), "sell"
+            elif qty < 0 and ask:
+                px, side = round(ask * (1 + SLIP_BPS / 1e4), 2), "buy"
+            else:
+                continue
+            self._mark_pending(sym)
+            logger.warning("RISK OFF (equity under %.0f): %s %d %s @ %.2f",
+                           self._risk_off_level(), side, abs(qty), sym, px)
+            return Signal(symbol=sym, side=side, quantity=min(abs(qty), MAX_ORDER_SHARES), price=px)
+        return None
+
+    def _gate(self, sig, market, portfolio):
+        """Shrink or drop an order so it can't break a hard limit (see the
+        week 5 block at the top). Every order passes here before it is sent."""
+        sym, side, qty, px = sig.symbol, sig.side, sig.quantity, sig.price
+        if self._liquidated:
+            return self._blocked(sig, "account liquidated")
+        if self._is_halted(sym):
+            return self._blocked(sig, "symbol halted")
+        pos = portfolio.positions.get(sym, 0)
+        flying = self._in_flight(sym, side)
+        max_long, max_short = self._seat_caps(sym)
+        team_cap = self._limit - POSITION_BUFFER
+        team = pos + self._team_others.get(sym, 0)
+        if side == "buy":
+            room = min(max_long - pos, team_cap - team) - flying
+            shrinks = max(0, -pos) - flying       # covering a short
+        else:
+            room = min(pos + max_short, team + team_cap) - flying
+            shrinks = max(0, pos) - flying        # selling a long
+        allowed = shrinks if self._risk_off else max(room, shrinks)
+        adds = min(qty, allowed) - max(0, shrinks)
+        if adds > 0 and not self._risk_off:       # the part that grows the book
+            mark = self._mark(sym, market) or px
+            gross = sum(abs(q) * self._mark(s, market) for s, q in portfolio.positions.items())
+            spare = MAX_GROSS_LEVERAGE * self._equity(market, portfolio) - gross
+            allowed = min(allowed, max(0, shrinks) + max(0, int(spare // mark)))
+        qty = min(qty, allowed, MAX_ORDER_SHARES)
+        if qty <= 0:
+            return self._blocked(sig, "risk off: reduce-only" if self._risk_off else
+                                 f"limit: pos={pos} in flight={flying} "
+                                 f"caps=+{max_long}/-{max_short} team={team}")
+        ref = self._ref.get(sym)
+        if ref and self._luld > 0:                # LULD collar around the venue mark
+            band = max(0.0, self._luld - LULD_MARGIN_PCT)
+            px = (min(px, int(ref * (1 + band) * 100) / 100) if side == "buy"
+                  else max(px, -int(-ref * (1 - band) * 100) / 100))
+        if qty != sig.quantity or px != sig.price:
+            logger.info("Gate: %s %s %d @ %.2f -> %d @ %.2f", side, sym,
+                        sig.quantity, sig.price, qty, px)
+        return Signal(symbol=sym, side=side, quantity=qty, price=px)
+
+    def _blocked(self, sig, why):
+        logger.info("Gate blocked %s %d %s: %s", sig.side, sig.quantity, sig.symbol, why)
+        return None
+
+    def _in_flight(self, sym, side):
+        """Shares of IOCs we sent in sym/side whose fills may not have landed."""
+        now = time.monotonic()
+        self._inflight = [f for f in self._inflight if now - f[0] < INFLIGHT_SEC and f[3] > 0]
+        return sum(f[3] for f in self._inflight if f[1] == sym and f[2] == side)
+
+    def _note_sent(self, sig):
+        self._inflight.append([time.monotonic(), sig.symbol, sig.side, sig.quantity])
+
+    # ── Halts ───────────────────────────────────────────────────────────
+    def _is_halted(self, sym):
+        now = time.monotonic()
+        if now < self._market_halt_until:
+            return True
+        until = self._halted.get(sym)
+        if until is None:
+            return False
+        if now < until + HALT_SLACK_SEC:
+            return True
+        logger.warning("No TRADING_RESUMED for %s — assuming it reopened", sym)
+        self._resumed(sym)
+        return False
+
+    def _resumed(self, sym):
+        """A halted symbol reopened: keep mean reversion out while its history
+        holds the jump, and queue a probe so the bot trades it again."""
+        self._halted.pop(sym, None)
+        self._paused[sym] = time.monotonic() + ON_EVENT_TIME
+        if "starter" in self._roles and sym not in SKIP_SYMBOLS and sym not in self._probes:
+            self._probes.append(sym)
+        logger.info("RESUMED %s — trading it again%s", sym,
+                    " (unwinding the shock position)" if sym in self._shocks else "")
 
     def _may_short(self, s, sym, bid):
         """True if a new short in sym should get past the venue: shorts are
@@ -448,17 +633,33 @@ class MyTrader(Trader):
         cfg = sc.get("config") or {}
         self._ssr_pct = float(cfg.get("SSR_TRIGGER_PCT", self._ssr_pct))
         self._locate_cap = int(cfg.get("SHORT_LOCATE_CAP", self._locate_cap))
+        self._luld = float(cfg.get("LULD_BAND_PCT", self._luld))
+        self._maint = float(sc.get("maintenance_fraction") or self._maint)
         if not data.get("late_join"):             # SSR is sticky until the next open
             self._ssr.clear()
             self._open_mid.clear()
-        logger.info("Session rules: shorts=%s limit=%d SSR=%.1f%%",
-                    self._shorts_ok, self._limit, self._ssr_pct * 100)
+            self._halted.clear()
+            self._market_halt_until = 0.0
+            self._liquidated = False
+            self._start_equity = None
+        long_cap, short_cap = self._seat_caps("")
+        logger.info("Session rules: shorts=%s limit=%d SSR=%.1f%% LULD=%.1f%% | seat caps "
+                    "+%d/-%d per symbol, reduce-only under equity %.0f (liquidation %.0f)",
+                    self._shorts_ok, self._limit, self._ssr_pct * 100, self._luld * 100,
+                    long_cap, short_cap, self._risk_off_level(),
+                    self._capital() * self._maint)
 
     def on_reject(self, code, message):
         logger.warning("REJECT [%s]: %s", code, message)
         if code in SHORT_REJECTS:                 # one reject per shock, never a streak
             for s in self._shocks.values():
                 s["no_short"] = True
+        elif code == "SYMBOL_HALTED":             # a halt we never heard about (reconnect)
+            m = re.match(r"(\S+) trading is halted\. Resume in (\d+)s", message or "")
+            if m:
+                self._halted[m.group(1)] = time.monotonic() + int(m.group(2))
+        elif code == "LIQUIDATED":
+            self._liquidated = True
 
     def _is_pending(self, sym):
         """True while an order in sym may still have fills on the way, so
@@ -485,6 +686,12 @@ class MyTrader(Trader):
     def on_fill(self, side, symbol, quantity, price):
         if self._is_pending(symbol):             # an IOC fills at once; let its other fills land
             self._pending[symbol] = min(self._pending[symbol], time.monotonic() + FILL_SETTLE_SEC)
+        left = quantity                          # these shares are no longer in flight
+        for f in self._inflight:
+            if f[1] == symbol and f[2] == side and left > 0:
+                take = min(left, f[3])
+                f[3] -= take
+                left -= take
         s = self._shocks.get(symbol)
         if s:                                    # shares the shock play owns (a buy
             if side == "buy":                    # covers any short before adding)
@@ -493,7 +700,7 @@ class MyTrader(Trader):
             else:
                 s["held"] = max(0, s["held"] - quantity)
         st = self._starter
-        if st["phase"] != "done" and symbol == STARTER_SYMBOL:
+        if st["phase"] != "done" and symbol == st["symbol"]:
             if side == "buy":
                 st["held"] += quantity
                 if st["phase"] == "buy":          # first fill starts the hold clock
@@ -529,6 +736,42 @@ class MyTrader(Trader):
     # shocks, calendar
     def on_event(self, event, message, data):
         logger.info("Event: %s | %s | %s", event, message, data)
+        now = time.monotonic()
+        if event == "TRADING_HALT" and data.get("symbol"):
+            sym = data["symbol"]
+            # Timed on our clock from the duration: the venue's resume_at is
+            # its wall clock, which can be skewed from ours.
+            self._halted[sym] = now + float(data.get("duration") or HALT_FALLBACK_SEC)
+            logger.warning("HALT %s for %.0fs — no orders there; %s", sym,
+                           self._halted[sym] - now,
+                           "holding the shock position through it" if sym in self._shocks
+                           else "everything else keeps trading")
+            return
+        if event == "TRADING_RESUMED" and data.get("symbol"):
+            self._resumed(data["symbol"])
+            return
+        if event == "MARKET_HALT":
+            self._market_halt_until = now + float(data.get("duration") or 3 * HALT_FALLBACK_SEC)
+            logger.warning("MARKET HALT for %.0fs — no orders anywhere",
+                           self._market_halt_until - now)
+            return
+        if event == "MARKET_RESUMED":
+            self._market_halt_until = 0.0
+            for sym in self._last_mid:
+                self._paused[sym] = now + ON_EVENT_TIME
+            self._resumed(STARTER_SYMBOL)
+            return
+        if event == "LIQUIDATION" and data.get("team_id") == _trader_config.TEAM_ID:
+            self._liquidated = True
+            logger.error("This seat was LIQUIDATED — no further orders this session")
+            return
+        if event == "CALENDAR_EVENT" and data.get("market_wide"):
+            # An econ print ramps every symbol: mean reversion would buy each
+            # leg of a move that keeps going.
+            for sym in data.get("affected") or list(self._last_mid):
+                self._paused[sym] = now + ON_EVENT_TIME
+            logger.info("Market-wide %s: pausing mean reversion %ds",
+                        data.get("kind", "event"), ON_EVENT_TIME)
         if event == "CALENDAR_EVENT" and data.get("kind") == "earnings":
             sym, pct = data.get("symbol"), data.get("pct")
             if not sym or not isinstance(pct, (int, float)) or pct == 0:
@@ -542,7 +785,10 @@ class MyTrader(Trader):
             # Teacher-injected: data["prices"] is each affected symbol's
             # target price; the move ramps in just like an earnings print.
             for sym, target in (data.get("prices") or {}).items():
-                mid = self._last_mid.get(sym)
+                # The target is a fundamental: compare it with the venue mark,
+                # not a book mid that may be stale (every untouched symbol
+                # would read as a shock of its own).
+                mid = self._ref.get(sym) or self._last_mid.get(sym)
                 if not mid or not isinstance(target, (int, float)):
                     continue
                 pct = target / mid - 1
@@ -600,6 +846,24 @@ class MyTrader(Trader):
         asyncio.run(TakerBot(self).run())
 
 
+def new_starter(symbol, wait_until=0.0) -> dict:
+    """A buy-hold-sell round trip in symbol (the starter, or a resume probe)."""
+    return {"phase": "buy", "symbol": symbol, "held": 0, "filled_at": 0.0,
+            "wait_until": wait_until}
+
+
+def team_positions(leaderboard, exclude) -> dict[str, int]:
+    """Per-symbol position of our team's seats other than `exclude` — the
+    venue's position limit counts all of them together."""
+    out: dict[str, int] = {}
+    for entry in list(leaderboard.traders or []) + list(leaderboard.brokers or []):
+        tid = entry.get("team_id") or ""
+        if tid.startswith(OWN_TEAM_PREFIX) and tid != exclude:
+            for sym, qty in (entry.get("positions") or {}).items():
+                out[sym] = out.get(sym, 0) + int(qty)
+    return out
+
+
 def short_interest(leaderboard) -> dict[str, int]:
     """Shares short per symbol across every seat on the leaderboard — what
     the venue's borrow cap is measured against."""
@@ -645,6 +909,18 @@ class TakerBot(_AdaptedTraderBot):
     """The standard bot (on_tick → risk check → order), but every Signal is
     sent as an IOC order instead of a resting limit order."""
 
+    def __init__(self, owner):
+        super().__init__(owner)
+        # Keep the venue mark (ref_price) per symbol: the LULD band and the
+        # maintenance check are both measured from it, not from the book mid.
+        update_book = self.market.update_book
+
+        def update_book_and_ref(snapshot):
+            update_book(snapshot)
+            if snapshot.ref_price > 0:
+                owner._ref[snapshot.symbol] = snapshot.ref_price
+        self.market.update_book = update_book_and_ref
+
     async def connect(self):
         await super().connect()
         self._ws = _AckTap(self._ws, self)
@@ -679,7 +955,7 @@ class TakerBot(_AdaptedTraderBot):
         elif msg.event == "SESSION_OPEN":
             self._owner._preopen = False
             self._owner.on_open(msg.data or {})
-            self._owner._starter = {"phase": "buy", "held": 0, "filled_at": 0.0, "wait_until": 0.0}
+            self._owner._starter = new_starter(STARTER_SYMBOL)
 
         # React to an earnings print now instead of at the next tick (up to
         # TICK_INTERVAL_SEC later): the first fills go to whoever is fastest.
@@ -707,6 +983,11 @@ class TakerBot(_AdaptedTraderBot):
 
         super()._on_leaderboard(msg)
         self._owner._short_interest = short_interest(msg)
+        self._owner._team_others = team_positions(msg, _trader_config.TEAM_ID)
+        if self._owner._start_equity is None:
+            me = next((e for e in msg.traders if e.get("team_id") == _trader_config.TEAM_ID), None)
+            if me and "net_worth" in me:
+                self._owner._start_equity = float(me["net_worth"])
 
         # Seed cash/positions after a reconnect (no PortfolioUpdate is resent).
         if getattr(self, "_portfolio_synced", True):
@@ -733,6 +1014,11 @@ class TakerBot(_AdaptedTraderBot):
         # Log and drop the order instead; if the socket is gone, listen() ends
         # too and run() reconnects both tasks. (CancelledError is not an
         # Exception, so a reconnect can still cancel this task.)
+        # Every order, from the tick loop or an event, passes the hard limits here.
+        signal = self._owner._gate(signal, self.market, self.portfolio)
+        if signal is None:
+            return
+        self._owner._note_sent(signal)
         try:
             await self._send(PlaceOrder(team_id=_trader_config.TEAM_ID,
                                         symbol=signal.symbol, side=signal.side,
