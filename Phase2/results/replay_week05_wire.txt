@@ -1,0 +1,59 @@
+      trader_1 SELL   5 MSFT   @ 359.57
+  TRADING_RESUMED  AAPL   Trading resumed on AAPL
+  TRADING_RESUMED  NVDA   Trading resumed on NVDA
+      trader_1 BUY    5 AAPL   @ 152.99
+      trader_1 SELL   5 AAPL   @ 152.99
+      trader_1 BUY    5 NVDA   @ 164.91
+      trader_1 SELL   5 NVDA   @ 164.82
+  CALENDAR_EVENT   NFLX   Earnings: NFLX moving +7.6%
+      trader_1 BUY   10 NFLX   @ 857.74
+      trader_1 BUY   10 NFLX   @ 859.34
+      trader_1 BUY   10 NFLX   @ 858.89
+      trader_1 BUY    7 NFLX   @ 859.41
+      trader_1 BUY   20 NFLX   @ 859.89
+      trader_1 BUY   30 NFLX   @ 860.89
+      trader_1 BUY   10 NFLX   @ 858.94
+      trader_1 BUY   19 NFLX   @ 859.94
+      trader_1 BUY    2 NFLX   @ 864.11
+  TRADING_HALT     NFLX   Trading halted on NFLX: NFLX velocity halt: 5.3% move in 60s (threshold 
+  TRADING_RESUMED  NFLX   Trading resumed on NFLX
+      trader_1 SELL   9 NFLX   @ 874.53
+      trader_1 SELL   4 NFLX   @ 870.03
+      trader_1 SELL  20 NFLX   @ 869.90
+      trader_1 SELL  15 NFLX   @ 869.13
+      trader_1 SELL  30 NFLX   @ 868.13
+      trader_1 SELL   5 NFLX   @ 869.09
+      trader_1 SELL  30 NFLX   @ 868.09
+      trader_1 SELL   5 NFLX   @ 866.26
+      trader_1 BUY    2 NFLX   @ 867.30
+      trader_1 BUY    3 NFLX   @ 867.34
+      trader_1 SELL   1 NFLX   @ 866.01
+      trader_1 SELL   4 NFLX   @ 865.55
+  CALENDAR_EVENT   AMD    Earnings: AMD moving -8.3%
+  TRADING_HALT     AMD    Trading halted on AMD: AMD velocity halt: 5.1% move in 60s (threshold 5.
+  SSR_ON           AMD    AMD is now under the short-sale rule — shorts must add liquidity above t
+  TRADING_RESUMED  AMD    Trading resumed on AMD
+      trader_1 BUY    5 AMD    @ 161.97
+      trader_1 SELL   5 AMD    @ 161.96
+  TRADING_HALT     AMD    Trading halted on AMD: AMD velocity halt: 5.2% move in 60s (threshold 5.
+  CALENDAR_EVENT          Econ Print: market-wide moving -3.0%
+  SSR_ON           ORCA   ORCA is now under the short-sale rule — shorts must add liquidity above 
+  TRADING_HALT     NFLX   Trading halted on NFLX: NFLX velocity halt: 5.0% move in 60s (threshold 
+  TRADING_HALT     AAPL   Trading halted on AAPL: AAPL velocity halt: 5.9% move in 60s (threshold 
+  TRADING_RESUMED  AMD    Trading resumed on AMD
+      trader_1 BUY    5 AMD    @ 165.25
+      trader_1 SELL   5 AMD    @ 165.24
+  TRADING_RESUMED  NFLX   Trading resumed on NFLX
+      trader_1 BUY    5 NFLX   @ 806.73
+      trader_1 SELL   5 NFLX   @ 804.68
+  TRADING_RESUMED  AAPL   Trading resumed on AAPL
+      trader_1 BUY    5 AAPL   @ 156.56
+      trader_1 SELL   5 AAPL   @ 156.50
+  SSR_ON           NFLX   NFLX is now under the short-sale rule — shorts must add liquidity above 
+  TRADING_HALT     AMD    Trading halted on AMD: AMD velocity halt: 5.7% move in 60s (threshold 5.
+  TRADING_RESUMED  AMD    Trading resumed on AMD
+      trader_1 BUY    5 AMD    @ 180.06
+      trader_1 SELL   5 AMD    @ 180.21
+  SESSION_CLOSED          Trading session is now CLOSED. Flatten positions.
+
+Received off the replay socket: {'book_snapshot': 49296, 'trade_execution': 3635, 'our_fills': 75, 'our_taker_fills': 36, 'session_event': 24, 'TRADING_RESUMED': 8, 'CALENDAR_EVENT': 3, 'TRADING_HALT': 6, 'SSR_ON': 3, 'SESSION_CLOSED': 1}
