@@ -1,0 +1,30 @@
+week 6  limit 1000  ticks (2442424, 2444818)
+
+PART A
+  forced liquidation of our seats: none
+  this recording has no leaderboard. Peak team position change from our fills (limit 1000, granted shares excluded): [('MSFT', 212), ('VLTA', 192), ('INTC', 180), ('TSLA', 133), ('AMZN', 120)]
+  halts: 5, resumes: 7
+    NFLX   resumed t2442679: trader fill +4, broker fill +7, ack +None (ticks; None = not in window)
+    AMD    resumed t2442679: trader fill +19, broker fill +23, ack +None (ticks; None = not in window)
+    TSLA   resumed t2442692: trader fill +20, broker fill +8, ack +None (ticks; None = not in window)
+    INTC   resumed t2442925: trader fill +0, broker fill +7, ack +None (ticks; None = not in window)
+    TSLA   resumed t2442965: trader fill +0, broker fill +8, ack +None (ticks; None = not in window)
+    VLTA   resumed t2443648: trader fill +1, broker fill +None, ack +None (ticks; None = not in window)
+    NFLX   resumed t2443655: trader fill +3, broker fill +5, ack +None (ticks; None = not in window)
+  IPO events: ['IPO_ANNOUNCE', 'IPO_OPEN', 'IPO_PRICED', 'IPO_LISTED']
+  IPO bids in the recording: not recorded (see the logs below)
+  uptime in leaderboards: not in this recording
+
+PART B: prints
+  t2442674 INTC    -5.81%  fills  27  open   +89  pnl    +27.13  fees   10.79
+  t2443024 MSFT    +3.07%  fills  38  open    +0  pnl   +875.10  fees  985.13
+  t2443374 AAPL    -2.25%  fills  16  open    +0  pnl   -266.40  fees  176.25
+  t2443374 NVDA    -2.25%  fills   4  open    +0  pnl     +7.38  fees   26.26
+  t2443374 TSLA    -2.25%  fills  14  open    +0  pnl    -56.74  fees  102.83
+  t2443374 AMZN    -2.25%  fills  36  open    +0  pnl   -583.13  fees  233.70
+  t2443374 GOOGL   -2.25%  fills   7  open    +0  pnl    -30.39  fees   56.99
+  t2443374 NFLX    -2.25%  fills  21  open    +0  pnl    -35.76  fees  392.25
+  t2443374 VLTA    -2.25%  fills  60  open  -342  pnl    -46.81  fees   60.60
+  live realized on prints: -109.61 (fees 2044.79)
+  tape replay on this recording: {'latency_0': 971.62, 'latency_1': -125.62, 'latency_2': -471.72, 'latency_3': -471.72}
+  trading P&L of the trader seats, marked at the close: -1060.40

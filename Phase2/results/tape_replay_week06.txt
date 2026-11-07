@@ -1,0 +1,12 @@
+
+session_week06_20261106_214023_market.jsonl.gz  shorts=True  halts=5
+  latency 0: pnl   +971.62  fees  1318.04  traded 10/14 plans  fills  85  unfilled orders  1
+  latency 1: pnl   -125.62  fees   481.18  traded  5/14 plans  fills  34  unfilled orders  1
+      MSFT    +3.07%  bought   60 sold   60  pnl   +346.10  held 15 ticks
+      NVDA    -2.25%  bought   12 sold   12  pnl     +5.16  held 20 ticks
+      AAPL    -2.25%  bought   70 sold   70  pnl   -237.94  held 31 ticks
+      GOOGL   -2.25%  bought   30 sold   30  pnl    -58.25  held 31 ticks
+      AMZN    -2.25%  bought   80 sold   80  pnl   -180.69  held 32 ticks
+  latency 2: pnl   -471.72  fees   274.68  traded  4/14 plans  fills  26  unfilled orders  1
+  latency 3: pnl   -471.72  fees   274.68  traded  4/14 plans  fills  26  unfilled orders  1
+  latency 5: pnl   -471.72  fees   274.68  traded  4/14 plans  fills  26  unfilled orders  1

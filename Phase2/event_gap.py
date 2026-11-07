@@ -95,6 +95,7 @@ class PlanResult:
 
     @property
     def traded(self) -> bool:
+        """True if any of the plan's orders filled."""
         return self.bought > 0 or self.sold > 0
 
 
@@ -182,7 +183,8 @@ class EventGapSignal:
             self._close(symbol, tick)
         return None
 
-    def _entry(self, plan: Plan, bid, ask, long_room, short_room, long_side) -> Order | None:
+    def _entry(self, plan: Plan, bid: float | None, ask: float | None, long_room: int,
+               short_room: int, long_side: bool) -> Order | None:
         if long_side:
             limit = floor(plan.fair * (1 - self.edge) * 100) / 100
             if ask is None or ask > limit or long_room <= 0:
@@ -193,12 +195,13 @@ class EventGapSignal:
             return None
         return Order(plan.symbol, "sell", min(short_room, MAX_ORDER_SHARES), limit, "entry")
 
-    def _at_target(self, plan: Plan, bid, ask) -> bool:
+    def _at_target(self, plan: Plan, bid: float | None, ask: float | None) -> bool:
         if plan.pct > 0:
             return bid is not None and bid >= plan.target
         return ask is not None and ask <= plan.target
 
-    def _exit(self, plan: Plan, held: int, bid, ask, reason: str) -> Order | None:
+    def _exit(self, plan: Plan, held: int, bid: float | None, ask: float | None,
+              reason: str) -> Order | None:
         slip = self.params.exit_slip_bps / 1e4
         qty = min(abs(held), MAX_ORDER_SHARES)
         if held > 0 and bid is not None:

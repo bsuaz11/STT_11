@@ -25,6 +25,7 @@ LIVE_SEATS = ("stt_11_trader_1", "stt_11_trader_2")
 
 
 def main() -> None:
+    """Draw the held-out backtest curves, with the live curve if given."""
     ap = argparse.ArgumentParser(description="Plot the equity curve")
     ap.add_argument("--results", default=str(HERE / "results" / "backtest_results.json"))
     ap.add_argument("--live", default=None)
@@ -43,12 +44,17 @@ def main() -> None:
     ax.fill_between(ticks, *np.percentile(grid, [10, 90], axis=0), color="#3b6ea5", alpha=0.18,
                     label="10th to 90th percentile")
     ax.plot(ticks, grid.mean(axis=0), color="#1f4e79", lw=2,
-            label=f"Backtest mean, {len(curves)} held-out seeds")
+            label=f"Backtest mean, {len(curves)} held-out seeds (one seat)")
 
     if args.live:
-        live = json.loads(pathlib.Path(args.live).read_text())["analysis"]
+        payload = json.loads(pathlib.Path(args.live).read_text())
+        live = payload["analysis"]
         series = [live["equity"][s] for s in LIVE_SEATS if s in live["equity"]]
-        if series:
+        if payload.get("trading_curve"):
+            t, pnl = zip(*payload["trading_curve"], strict=True)
+            ax.plot(t, pnl, color="#c0392b", lw=1.8,
+                    label="Live Nov 6, both trader seats (trades only, incl. IPO and probes)")
+        elif series:
             start = min(s[0][0] for s in series)
             by_tick: dict[int, float] = {}
             for s in series:
@@ -62,7 +68,8 @@ def main() -> None:
     ax.axhline(0, color="#555", lw=0.8)
     ax.set_xlabel("Ticks since the session opened")
     ax.set_ylabel("Excess P&L over do-nothing control ($)")
-    ax.set_title("EventGap on the week 6 scenario, net of 40 bps taker fees")
+    ax.set_title("EventGap on the week 6 scenario, net of 40 bps taker fees" +
+                 (": backtest vs live" if args.live else ""))
     ax.legend(frameon=False, loc="upper left")
     ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()

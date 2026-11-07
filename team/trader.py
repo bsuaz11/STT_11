@@ -24,7 +24,9 @@ import json
 import logging
 import os
 import pathlib
+from collections.abc import AsyncIterator
 from dataclasses import asdict
+from typing import TYPE_CHECKING, Any
 
 import trader.config as _trader_config
 from shared.messages import IPOSubscribe, OrderAck, PlaceOrder, Signal
@@ -32,8 +34,13 @@ from shared.messages import IPOSubscribe, OrderAck, PlaceOrder, Signal
 from arena import Trader
 from arena.trader import _AdaptedTraderBot
 from Phase2.event_gap import EventGapSignal, GapParams, Plan
-from team.common import HaltTracker, TickClock, capital_baseline, short_interest, team_positions
+from team.common import (HaltTracker, TickClock, capital_baseline, short_interest,
+                         single_instance, team_positions)
 from team.config import CAPITAL
+
+if TYPE_CHECKING:
+    from shared.messages import BookSnapshot, Leaderboard, PortfolioUpdate, SessionEvent
+    from trader.trader import MarketData, Portfolio
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +102,10 @@ LISTING_MAX_HOLD_TICKS = 1200
 
 STATE_DIR = pathlib.Path(__file__).resolve().parent.parent / "Phase2" / "state"
 STATE_MAX_AGE_TICKS = 3600    # older than a block: it belongs to another session
+# A seat whose own position view keeps disagreeing with the leaderboard is not
+# hearing about its fills: another process (here or on a teammate's machine)
+# holds the seat's connection. It stops trading rather than trade blind.
+STAND_DOWN_BOARDS = 3         # consecutive mismatching leaderboards (~2 s apart)
 
 
 class RoundTrip:
@@ -107,6 +118,7 @@ class RoundTrip:
         self.wait_until = not_before
 
     def on_fill(self, side: str, quantity: int, now: float) -> None:
+        """Count a fill of the probe's own order and advance its phase."""
         if side == "buy":
             self.held += quantity
             if self.phase == "buy":
@@ -156,6 +168,8 @@ class MyTrader(Trader):
         self._in_auction = False                  # pre-open / pre-close: IOCs are refused
         self._liquidated = False
         self._risk_off = False
+        self._view_mismatch = 0                   # consecutive boards disagreeing with us
+        self._stood_down = False
         self._cash = 0.0
         # Order state
         self._pending: dict[str, float] = {}      # symbol -> tick its last order settles
@@ -167,12 +181,12 @@ class MyTrader(Trader):
         self._listings: dict[str, dict] = {}      # symbol -> {offer, high, t0}
 
     # ── Each tick ───────────────────────────────────────────────────────
-    def on_tick(self, market, portfolio) -> Signal | None:
+    def on_tick(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
         """Refresh state, then: risk off > signal > listing exit > probe."""
         self._cash = portfolio.cash
         for sym in self.halts.expired():
             self._on_resumed(sym)
-        if self._in_auction or self._liquidated:
+        if self._in_auction or self._liquidated or self._stood_down:
             return None
         for sym in market.symbols():
             mid = market.mid_price(sym)
@@ -187,7 +201,7 @@ class MyTrader(Trader):
                 or self._probe_order(market, portfolio))
 
     # ── Role: signal ────────────────────────────────────────────────────
-    def _signal_order(self, market, portfolio) -> Signal | None:
+    def _signal_order(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
         tick = int(self.clock.now())
         for sym in list(self.signal.plans):
             if self.halts.is_halted(sym) or self._is_pending(sym):
@@ -223,17 +237,17 @@ class MyTrader(Trader):
                         sym, pct * 100, plan.pre_mark, plan.fair, self.signal.edge * 1e4)
             self._save_state()
 
-    def _long_room(self, sym, portfolio, ask) -> int:
+    def _long_room(self, sym: str, portfolio: Portfolio, ask: float | None) -> int:
         room = self._seat_caps(sym)[0] - portfolio.positions.get(sym, 0)
         return min(room, int(portfolio.cash * CASH_USE / ask)) if ask else 0
 
-    def _short_room(self, sym, portfolio, bid) -> int:
+    def _short_room(self, sym: str, portfolio: Portfolio, bid: float | None) -> int:
         pos = portfolio.positions.get(sym, 0)
         if self._may_short(sym, bid):
             return pos + self._seat_caps(sym)[1]
         return max(0, pos)
 
-    def _may_short(self, sym, bid) -> bool:
+    def _may_short(self, sym: str, bid: float | None) -> bool:
         """Would a new short get past the venue? Not under (or about to trip)
         the short-sale rule, and borrow is left."""
         if (not self._shorts_ok or sym in self._ssr or bid is None
@@ -251,7 +265,7 @@ class MyTrader(Trader):
         if "probe" in self.roles and sym not in SKIP_SYMBOLS and sym not in self._probe_queue:
             self._probe_queue.append(sym)
 
-    def _probe_order(self, market, portfolio) -> Signal | None:
+    def _probe_order(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
         now = self.clock.now()
         if self._probe is None or self._probe.phase == "done":
             # Never in a symbol the signal is trading: its fills would count there.
@@ -281,7 +295,8 @@ class MyTrader(Trader):
         return None
 
     # ── Role: IPO ───────────────────────────────────────────────────────
-    def on_ipo(self, symbol, lo, hi, shares, data):
+    def on_ipo(self, symbol: str, lo: float, hi: float, shares: int,
+               data: dict) -> tuple[int, float] | None:
         """Bid the top of the range. pending_ipo() retries until confirmed."""
         if "ipo" not in self.roles or hi <= 0:
             return None
@@ -307,7 +322,7 @@ class MyTrader(Trader):
                                 quantity=ind["qty"], max_price=ind["px"])
         return None
 
-    def _listing_exit(self, market, portfolio) -> Signal | None:
+    def _listing_exit(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
         now = self.clock.now()
         for sym, deal in list(self._listings.items()):
             pos = portfolio.positions.get(sym, 0)
@@ -338,10 +353,10 @@ class MyTrader(Trader):
             return cap, cap
         return (PROBE_SHARES if "probe" in self.roles else 0), 0
 
-    def _mark(self, sym, market) -> float:
+    def _mark(self, sym: str, market: MarketData) -> float:
         return self._ref.get(sym) or market.mid_price(sym) or 0.0
 
-    def _equity(self, market, portfolio) -> float:
+    def _equity(self, market: MarketData, portfolio: Portfolio) -> float:
         """Net worth at the venue mark — what the maintenance check uses."""
         return portfolio.cash + sum(q * self._mark(s, market)
                                     for s, q in portfolio.positions.items() if q)
@@ -352,7 +367,7 @@ class MyTrader(Trader):
             capital = float(CAPITAL.get(self.team_id, _trader_config.STARTING_CASH))
         return capital * (self._maint + RISK_OFF_MARGIN)
 
-    def _reduce_largest(self, market, portfolio) -> Signal | None:
+    def _reduce_largest(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
         """Near the liquidation line: IOC out of the biggest position."""
         held = sorted(((abs(q) * self._mark(s, market), s, q)
                        for s, q in portfolio.positions.items()
@@ -371,12 +386,14 @@ class MyTrader(Trader):
             return Signal(symbol=sym, side=side, quantity=min(abs(qty), MAX_ORDER_SHARES), price=px)
         return None
 
-    def gate(self, sig: Signal, market, portfolio) -> Signal | None:
+    def gate(self, sig: Signal, market: MarketData, portfolio: Portfolio) -> Signal | None:
         """Shrink or drop an order so it can't break a hard limit. Reducing a
         position is always allowed; only the part that grows it is limited."""
         sym, side, qty, px = sig.symbol, sig.side, sig.quantity, sig.price
         if self._liquidated:
             return self._blocked(sig, "account liquidated")
+        if self._stood_down:
+            return self._blocked(sig, "another process holds this seat")
         if self._in_auction:
             return self._blocked(sig, "auction: IOCs are refused")
         if self.halts.is_halted(sym):
@@ -415,27 +432,29 @@ class MyTrader(Trader):
                         sig.quantity, sig.price, qty, px)
         return Signal(symbol=sym, side=side, quantity=qty, price=px)
 
-    def _blocked(self, sig, why) -> None:
+    def _blocked(self, sig: Signal, why: str) -> None:
         logger.info("Gate blocked %s %d %s: %s", sig.side, sig.quantity, sig.symbol, why)
 
     def note_sent(self, sig: Signal) -> None:
+        """Count an IOC as in flight until its fills land or it dies."""
         self._inflight.append([self.clock.now() + PENDING_TICKS, sig.symbol, sig.side, sig.quantity])
 
-    def _in_flight(self, sym, side) -> int:
+    def _in_flight(self, sym: str, side: str) -> int:
         """Shares of IOCs sent in sym/side whose fills may not have landed. An
         IOC matches in one pass, so its first fill means the rest dies with it."""
         now = self.clock.now()
         self._inflight = [f for f in self._inflight if now < f[0] and f[3] > 0]
         return sum(f[3] for f in self._inflight if f[1] == sym and f[2] == side)
 
-    def _is_pending(self, sym) -> bool:
+    def _is_pending(self, sym: str) -> bool:
         return self.clock.now() < self._pending.get(sym, 0.0)
 
-    def _mark_pending(self, sym) -> None:
+    def _mark_pending(self, sym: str) -> None:
         self._pending[sym] = self.clock.now() + PENDING_TICKS
 
     # ── Venue callbacks ─────────────────────────────────────────────────
     def on_book(self, symbol: str, ref_price: float) -> None:
+        """Keep the venue mark, which the LULD band and maintenance check use."""
         if ref_price > 0:
             self._ref[symbol] = ref_price
 
@@ -471,15 +490,25 @@ class MyTrader(Trader):
                     self._ssr_pct * 100, self._luld * 100, self._maint * 100,
                     *self._seat_caps(""), self.signal.taker_fee * 1e4)
 
-    def on_leaderboard(self, msg) -> None:
+    def on_leaderboard(self, msg: Leaderboard) -> None:
+        """Clock, borrow, team positions, capital, and the duplicate-seat check."""
         self.clock.note(msg.tick)
         self._short_interest = short_interest(msg)
         self._team_others = team_positions(msg, self.team_id)
-        if self._capital is None:
-            me = next((e for e in msg.traders if e.get("team_id") == self.team_id), None)
-            if me and "net_worth" in me:
-                self._capital = capital_baseline(float(me["net_worth"]),
-                                                 CAPITAL.get(self.team_id))
+        me = next((e for e in msg.traders if e.get("team_id") == self.team_id), None)
+        if me is None:
+            return
+        if self._capital is None and "net_worth" in me:
+            self._capital = capital_baseline(float(me["net_worth"]), CAPITAL.get(self.team_id))
+        if self.portfolio is not None and "positions" in me:
+            venue = {s: int(q) for s, q in me["positions"].items() if q}
+            mine = {s: int(q) for s, q in self.portfolio.positions.items() if q}
+            self._view_mismatch = self._view_mismatch + 1 if venue != mine else 0
+            if self._view_mismatch >= STAND_DOWN_BOARDS and not self._stood_down:
+                self._stood_down = True
+                logger.error("STANDING DOWN: the venue says %s holds %s, this process thinks %s. "
+                             "Another process has this seat's connection — stop the extra one.",
+                             self.team_id, venue, mine)
 
     # ── Restart safety ──────────────────────────────────────────────────
     def _save_state(self) -> None:
@@ -512,6 +541,7 @@ class MyTrader(Trader):
                        list(state["plans"]), list(state["listings"]))
 
     def on_reject(self, code: str | None, message: str | None) -> None:
+        """React to a venue reject: shorts, halts, liquidation, IPO cash."""
         logger.warning("REJECT [%s]: %s", code, message)
         if code in SHORT_REJECTS:                 # a rejected short: no new ones for a while
             self._no_short_until = self.clock.now() + 30
@@ -524,7 +554,8 @@ class MyTrader(Trader):
                 ind["qty"] = max(1, ind["qty"] // 2)
                 ind["next"] = self.clock.now()
 
-    def on_fill(self, side, symbol, quantity, price) -> None:
+    def on_fill(self, side: str, symbol: str, quantity: int, price: float) -> None:
+        """Settle the in-flight count and charge the fill to the plan or the probe."""
         now = self.clock.now()
         if self._is_pending(symbol):              # an IOC fills at once; let the rest land
             self._pending[symbol] = min(self._pending[symbol], now + FILL_SETTLE_TICKS)
@@ -541,7 +572,8 @@ class MyTrader(Trader):
         elif self._probe is not None and self._probe.symbol == symbol and self._probe.phase != "done":
             self._probe.on_fill(side, quantity, now)
 
-    def on_event(self, event, message, data) -> None:
+    def on_event(self, event: str, message: str, data: dict) -> None:
+        """Session events: halts, prints, fees, SSR, auctions, IPO, liquidation."""
         logger.info("Event: %s | %s | %s", event, message, data)
         self.clock.note(data.get("tick"))
         for sym in self.halts.on_event(event, data):
@@ -574,6 +606,7 @@ class MyTrader(Trader):
             logger.error("This seat was LIQUIDATED — no further orders this session")
 
     def run(self) -> None:
+        """Connect and trade until interrupted."""
         logging.basicConfig(level=logging.INFO,
                             format="%(asctime)s  %(levelname)-8s  %(message)s",
                             datefmt="%H:%M:%S")
@@ -584,16 +617,16 @@ class _WireTap:
     """Wraps the websocket so the bot sees OrderAck and ErrorMsg, which the
     stock bot only logs."""
 
-    def __init__(self, ws, bot) -> None:
+    def __init__(self, ws: Any, bot: TakerBot) -> None:
         self._ws, self._bot = ws, bot
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._ws, name)
 
-    def __aiter__(self):
+    def __aiter__(self) -> AsyncIterator[str]:
         return self._tap()
 
-    async def _tap(self):
+    async def _tap(self) -> AsyncIterator[str]:
         async for raw in self._ws:
             if '"order_ack"' in raw:
                 try:
@@ -621,6 +654,7 @@ class TakerBot(_AdaptedTraderBot):
         self._portfolio_synced = False
 
     async def connect(self) -> None:
+        """Connect, tap the socket, and track whether the portfolio is synced."""
         await super().connect()
         self._ws = _WireTap(self._ws, self)
         # A reconnect gets no PortfolioUpdate until the first fill, so cash and
@@ -628,34 +662,36 @@ class TakerBot(_AdaptedTraderBot):
         self._portfolio_synced = False
         apply_update = type(self.portfolio).apply_server_update
 
-        def synced_apply(update, _portfolio=self.portfolio):
+        def synced_apply(update: PortfolioUpdate, _portfolio: Portfolio = self.portfolio) -> None:
             apply_update(_portfolio, update)
             self._portfolio_synced = True
         self.portfolio.apply_server_update = synced_apply
 
     @property
-    def market(self):
+    def market(self) -> MarketData:
+        """The book view, rebuilt by run() on every reconnect."""
         return self._market
 
     @market.setter
-    def market(self, value) -> None:
+    def market(self, value: MarketData) -> None:
         # run() builds a fresh MarketData on every reconnect, so the mark feed
         # has to be attached to each one rather than wrapped once at startup.
         update_book = value.update_book
 
-        def update_book_and_mark(snapshot) -> None:
+        def update_book_and_mark(snapshot: BookSnapshot) -> None:
             update_book(snapshot)
             self._owner.on_book(snapshot.symbol, snapshot.ref_price)
         value.update_book = update_book_and_mark
         self._market = value
 
     def on_ack(self, raw: str) -> None:
+        """Log our own order acknowledgements."""
         ack = OrderAck.model_validate_json(raw)
         if ack.team_id == self._owner.team_id:
             logger.info("order_ack -> id: %s %s %d %s @ %.2f",
                         ack.order_id, ack.side, ack.quantity, ack.symbol, ack.price)
 
-    async def _on_session_event(self, msg) -> None:
+    async def _on_session_event(self, msg: SessionEvent) -> None:
         owner = self._owner
         if msg.event in ("SESSION_PREOPEN", "SESSION_OPEN"):
             self._in_session = True
@@ -677,7 +713,7 @@ class TakerBot(_AdaptedTraderBot):
         except Exception:
             logger.exception("on_tick raised on an event — waiting for the next tick")
 
-    def _on_leaderboard(self, msg) -> None:
+    def _on_leaderboard(self, msg: Leaderboard) -> None:
         if self._in_session and not self._session_open:
             self._session_open = True         # reconnected mid-session: reopen the gate
             logger.info("Session still live after reconnect — trading gate reopened")
@@ -696,11 +732,13 @@ class TakerBot(_AdaptedTraderBot):
                 break
 
     async def flatten_all_positions(self) -> None:
+        """Hold through the close (see below)."""
         # The stock bot flattens on SESSION_CLOSED, after the venue has closed,
         # so every order would be rejected. Hold through the close instead.
         logger.info("Session closed — holding positions (no flatten)")
 
     async def trading_loop(self) -> None:
+        """The standard loop, plus the IPO indication watcher beside it."""
         watcher = asyncio.create_task(self._ipo_watch())
         try:
             await super().trading_loop()
@@ -741,4 +779,5 @@ class TakerBot(_AdaptedTraderBot):
 
 
 if __name__ == "__main__":
+    _lock = single_instance(_trader_config.TEAM_ID)
     MyTrader(state_path=STATE_DIR / f"{_trader_config.TEAM_ID}.json").run()

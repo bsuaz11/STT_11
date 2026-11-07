@@ -33,7 +33,8 @@ class MyExchange(Exchange):
         self._volume: Counter[str] = Counter()
         self._trades = 0
 
-    def on_trade(self, symbol, price, quantity, buyer_id, seller_id):
+    def on_trade(self, symbol: str, price: float, quantity: int, buyer_id: str,
+                 seller_id: str) -> None:
         """Track who the venue's notional comes from, to judge the fee schedule."""
         notional = price * quantity
         self._volume[buyer_id] += notional
