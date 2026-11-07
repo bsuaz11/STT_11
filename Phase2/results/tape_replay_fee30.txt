@@ -1,0 +1,40 @@
+
+session_week04_20261023_204025_market.jsonl.gz  shorts=True  halts=0
+  latency 0: pnl  +1492.10  fees  1071.27  traded 11/13 plans  fills 145  unfilled orders 37
+  latency 1: pnl   +751.48  fees  1001.44  traded 11/13 plans  fills 124  unfilled orders 33
+      GOOGL   -5.66%  bought   60 sold   60  pnl    -85.96  held 31 ticks
+      NFLX    -2.49%  bought   35 sold   35  pnl   +144.50  held 21 ticks
+      META    -2.49%  bought   52 sold   52  pnl    +95.90  held 24 ticks
+      MSFT    -2.49%  bought   46 sold   46  pnl   +203.75  held 31 ticks
+      NVDA    -2.49%  bought   61 sold   61  pnl    +46.78  held 31 ticks
+      TSLA    -2.49%  bought  102 sold  102  pnl   +222.08  held 31 ticks
+      GOOGL   -2.49%  bought   44 sold   44  pnl    +23.53  held 31 ticks
+      AMD     -2.49%  bought   25 sold   25  pnl    +14.22  held 31 ticks
+      AAPL    -2.49%  bought  160 sold  160  pnl    +64.23  held 37 ticks
+      ORCA    -2.49%  bought   80 sold   80  pnl    +28.17  held 37 ticks
+      INTC    -2.49%  bought  198 sold  198  pnl     -5.72  held 40 ticks
+  latency 2: pnl   +466.19  fees   938.26  traded 10/13 plans  fills 120  unfilled orders 46
+  latency 3: pnl   +432.79  fees   937.66  traded 10/13 plans  fills 111  unfilled orders 42
+  latency 5: pnl   +316.43  fees   937.80  traded  8/13 plans  fills 102  unfilled orders 38
+
+session_week02_20261009_204000.jsonl.gz  shorts=False  halts=0
+  latency 0: pnl     +0.00  fees     0.00  traded  0/11 plans  fills   0  unfilled orders  0
+  latency 1: pnl     +0.00  fees     0.00  traded  0/11 plans  fills   0  unfilled orders  0
+  latency 2: pnl     +0.00  fees     0.00  traded  0/11 plans  fills   0  unfilled orders  0
+  latency 3: pnl     +0.00  fees     0.00  traded  0/11 plans  fills   0  unfilled orders  0
+  latency 5: pnl     +0.00  fees     0.00  traded  0/11 plans  fills   0  unfilled orders  0
+
+session_week05_20261029_221018_market.jsonl.gz  shorts=True  halts=6
+  latency 0: pnl   +213.11  fees  1517.38  traded  8/13 plans  fills 104  unfilled orders 41
+  latency 1: pnl   +169.87  fees  1515.67  traded  8/13 plans  fills  95  unfilled orders 40
+      NFLX    +7.59%  bought  115 sold  115  pnl   -377.27  held 276 ticks
+      GOOGL   -3.03%  bought    1 sold    1  pnl     +3.84  held 15 ticks
+      NFLX    -3.03%  bought   87 sold   87  pnl   +625.53  held 15 ticks
+      NVDA    -3.03%  bought   57 sold   57  pnl    +37.66  held 19 ticks
+      TSLA    -3.03%  bought   91 sold   91  pnl   +208.31  held 23 ticks
+      MSFT    -3.03%  bought   15 sold   15  pnl    +29.37  held 31 ticks
+      AAPL    -3.03%  bought  103 sold  103  pnl   -292.51  held 41 ticks
+      AMZN    -3.03%  bought  120 sold  120  pnl    -65.06  held 71 ticks
+  latency 2: pnl   -557.83  fees  1503.46  traded  7/13 plans  fills  88  unfilled orders 40
+  latency 3: pnl  -1834.72  fees  1500.48  traded  7/13 plans  fills 101  unfilled orders 52
+  latency 5: pnl  -2447.43  fees  1393.58  traded  8/13 plans  fills  91  unfilled orders 18
