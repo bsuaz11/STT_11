@@ -2,7 +2,7 @@
 """
 Phase2/live_compare.py — what the bots actually did in a recorded session.
 
-    PYTHONPATH=engine:. python Phase2/live_compare.py <recording> \\
+    PYTHONPATH=engine:. python Phase2/live_compare.py Phase2/data/session_week06_*.jsonl.gz \\
         [--logs Phase2/logs/<run>] [--out Phase2/results/live_week06.json]
 
 Reads a session recording (scripts/replay_session.py plays the same file) and
@@ -193,6 +193,62 @@ def realized_by_print(a: dict) -> list[dict]:
             for r in rows.values() if r["fills"]]
 
 
+def trading_curve(path: str, a: dict) -> list[tuple[int, float]]:
+    """Our trader seats' P&L from their own trades, marked at the venue mark,
+    one point per tick since the open. Net of taker fees; granted shares are
+    not traded, so this compares with the backtest's excess over a control.
+
+    A market tape has no allocation records, so an IPO allocation is inferred
+    as the shares a seat sold beyond what it bought, booked at the offer
+    when the deal priced.
+    """
+    offer, priced_at = None, None
+    net: dict[tuple[str, str], int] = defaultdict(int)
+    for t in a["trades"]:
+        for seat in TRADERS:
+            if seat in (t["buyer"], t["seller"]):
+                net[(seat, t["symbol"])] += t["quantity"] if t["buyer"] == seat else -t["quantity"]
+    for e in a["ipo_events"]:
+        if e["event"] == "IPO_PRICED":
+            priced_at = e["tick"]
+            m = re.search(r"priced at \$([\d.]+)", e["message"] or "")
+            offer = float(m.group(1)) if m else None
+    listed = {e["message"].split()[0] for e in a["ipo_events"] if e["event"] == "IPO_LISTED"}
+    allocation = {key: -q for key, q in net.items() if q < 0 and key[1] in listed}
+
+    cash, pos, mark = 0.0, defaultdict(int), {}
+    trades = iter(a["trades"])
+    pending = next(trades, None)
+    curve: list[tuple[int, float]] = []
+    start = a["open_tick"] if a["open_tick"] is not None else a["ticks"][0]
+    last_tick = None
+    for rec in iter_records(path):
+        tick, msg = rec.get("tick"), rec.get("msg") or {}
+        if tick is None:
+            continue
+        if msg.get("type") == "book_snapshot" and msg.get("ref_price"):
+            mark[msg["symbol"]] = msg["ref_price"]
+        if offer and priced_at is not None and tick >= priced_at and allocation:
+            for (_seat, sym), q in allocation.items():
+                pos[sym] += q
+                cash -= q * offer
+                mark.setdefault(sym, offer)       # unlisted until it trades: worth the offer
+            allocation = {}
+        while pending is not None and pending["tick"] <= tick:
+            for seat in TRADERS:
+                if seat in (pending["buyer"], pending["seller"]):
+                    signed = pending["quantity"] if pending["buyer"] == seat else -pending["quantity"]
+                    pos[pending["symbol"]] += signed
+                    cash -= signed * pending["price"]
+                    if pending["taker"] == seat:
+                        cash -= pending["fee"]
+            pending = next(trades, None)
+        if tick != last_tick:
+            curve.append((tick - start, cash + sum(q * mark.get(s, 0.0) for s, q in pos.items())))
+            last_tick = tick
+    return curve
+
+
 def parse_logs(logdir: str | None) -> dict:
     """Pull the seats' own account of the session out of their logs."""
     if not logdir:
@@ -225,6 +281,7 @@ def parse_logs(logdir: str | None) -> dict:
 
 
 def report(a: dict, logs: dict, tape_pnl: dict | None) -> None:
+    """Print Part A evidence and the per-print live P&L."""
     print(f"week {a['week']}  limit {a['limit']}  ticks {a['ticks']}\n")
     print("PART A")
     print(f"  forced liquidation of our seats: {a['liquidations'] or 'none'}")
@@ -266,11 +323,13 @@ def report(a: dict, logs: dict, tape_pnl: dict | None) -> None:
 
 
 def main() -> None:
+    """Analyse one recording (and the seats' logs, if any)."""
     ap = argparse.ArgumentParser(description="Report what the bots did in a recorded session")
     ap.add_argument("recording")
     ap.add_argument("--logs", default=None, help="a Phase2/logs/<run> directory")
     ap.add_argument("--out", default=None)
     ap.add_argument("--fee", type=float, default=0.004)
+    ap.add_argument("--seats", type=int, default=2, help="trader seats that ran live")
     args = ap.parse_args()
     a = analyse(args.recording)
     logs = parse_logs(args.logs)
@@ -279,12 +338,15 @@ def main() -> None:
     params = GapParams()
     if frozen.exists():
         params = GapParams(**json.loads(frozen.read_text())["frozen_params"])
-    tape_pnl = {f"latency_{lat}": round(replay(tape, params, lat, args.fee)["pnl"], 2)
+    tape_pnl = {f"latency_{lat}": round(replay(tape, params, lat, args.fee, args.seats)["pnl"], 2)
                 for lat in (0, 1, 2, 3)}
     report(a, logs, tape_pnl)
+    curve = trading_curve(args.recording, a)
+    print(f"  trading P&L of the trader seats, marked at the close: {curve[-1][1]:+.2f}")
     if args.out:
         pathlib.Path(args.out).write_text(json.dumps(
-            {"analysis": a, "by_print": realized_by_print(a), "logs": logs, "tape_replay": tape_pnl}))
+            {"analysis": a, "by_print": realized_by_print(a), "logs": logs, "tape_replay": tape_pnl,
+             "trading_curve": curve}))
 
 
 if __name__ == "__main__":

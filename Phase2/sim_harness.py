@@ -153,12 +153,14 @@ class SeatBot(SimBot):
             self.trader.on_fill(side, msg["symbol"], int(msg["quantity"]), float(msg["price"]))
 
     def ipo_indication(self, deal: dict[str, Any], cash: float) -> tuple[int, float] | None:
+        """The seat's on_ipo answer, as the simulator asks for it."""
         lo, hi = deal["offer_range"]
         self.trader._cash = cash
         wish = self.trader.on_ipo(deal["symbol"], lo, hi, deal["shares"], deal)
         return wish if isinstance(wish, tuple) else None
 
     async def act(self, arena: HeadlessArena) -> None:
+        """One tick: feed the seat the market, then send what it decides."""
         t = self.trader
         tick = arena.server.tick
         t.clock.note(tick)
@@ -285,9 +287,9 @@ async def _run(seed: int, params: GapParams, week: int, ticks: int, delay: int, 
                 syms = {s for b in seat_bots for s in b.portfolio.positions}
                 team_max = max([team_max] + [abs(sum(b.portfolio.positions.get(s, 0) for b in seat_bots))
                                              for s in syms])
-        equity = [sum(vals) for vals in zip(*(arena.equity[b.team_id] for b in seat_bots))]
+        equity = [sum(vals) for vals in zip(*(arena.equity[b.team_id] for b in seat_bots), strict=False)]
         control = [c * seats for c in arena.equity["control"]]
-        curve = [e - c for e, c in zip(equity, control)]
+        curve = [e - c for e, c in zip(equity, control, strict=False)]
         peak, dd = curve[0], 0.0
         for v in curve:
             peak = max(peak, v)

@@ -43,8 +43,8 @@ def plain_copy(path: str, folder: str) -> str:
 
 
 async def listen(port: int) -> Counter:
+    """Read the replay socket until it falls quiet; print what concerns us."""
     counts: Counter = Counter()
-    first_tick_ms = None
     for _ in range(50):                  # the server takes a moment to bind
         try:
             ws = await websockets.connect(f"ws://localhost:{port}", max_size=None)
@@ -78,6 +78,7 @@ async def listen(port: int) -> Counter:
 
 
 def main() -> None:
+    """Serve the recording with replay_session.py and listen to it."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("recording")
     ap.add_argument("--speed", type=float, default=200.0)

@@ -33,15 +33,20 @@ import pathlib
 import random
 import statistics as st
 import sys
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict
 from itertools import product
+from typing import TYPE_CHECKING, Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "engine")]
 
 from Phase2.event_gap import GapParams  # noqa: E402
 from Phase2.sim_harness import SessionStats, run_session  # noqa: E402
+
+if TYPE_CHECKING:
+    from shared.messages import Signal
 
 RESULTS = pathlib.Path(__file__).resolve().parent / "results"
 TRAIN_SEEDS = list(range(1000, 1012))
@@ -57,7 +62,8 @@ def _one(job: tuple[int, GapParams, dict]) -> SessionStats:
 
 
 def run_many(pool: ProcessPoolExecutor, seeds: list[int], params: GapParams,
-             **kwargs) -> list[SessionStats]:
+             **kwargs: object) -> list[SessionStats]:
+    """One session per seed, each in a fresh worker process."""
     return list(pool.map(_one, [(s, params, kwargs) for s in seeds]))
 
 
@@ -91,7 +97,7 @@ def summarize(rows: list[SessionStats]) -> dict:
     }
 
 
-def _merge(dicts) -> dict[str, int]:
+def _merge(dicts: Iterable[dict[str, int]]) -> dict[str, int]:
     out: dict[str, int] = {}
     for d in dicts:
         for k, v in d.items():
@@ -142,7 +148,7 @@ def conditions(pool: ProcessPoolExecutor, seeds: list[int], params: GapParams) -
 
 
 # ── Naive baselines, through the assignment's SimSession ─────────────────
-def _momentum(symbol, prices, history, book, portfolio):
+def _momentum(symbol: str, prices: dict, history: list, book: Any, portfolio: dict) -> Signal | None:
     from shared.messages import Signal
     if len(history) < 21:
         return None
@@ -155,7 +161,7 @@ def _momentum(symbol, prices, history, book, portfolio):
     return None
 
 
-def _reversion(symbol, prices, history, book, portfolio):
+def _reversion(symbol: str, prices: dict, history: list, book: Any, portfolio: dict) -> Signal | None:
     from shared.messages import Signal
     if len(history) < 31:
         return None
@@ -170,7 +176,8 @@ def _reversion(symbol, prices, history, book, portfolio):
     return None
 
 
-def _event_gap_no_events(symbol, prices, history, book, portfolio):
+def _event_gap_no_events(symbol: str, prices: dict, history: list, book: Any,
+                         portfolio: dict) -> Signal | None:
     """The signal in a market with no prints: it has nothing to act on."""
     return None
 
@@ -194,6 +201,7 @@ def _simsession(job: tuple[str, int, float]) -> dict:
 
 
 def baselines(pool: ProcessPoolExecutor, seeds: list[int], fee: float) -> dict[str, dict]:
+    """Naive momentum and reversion, and EventGap, through the assignment's SimSession."""
     out = {}
     for name in ("momentum", "reversion", "event_gap"):
         rows = list(pool.map(_simsession, [(name, s, fee) for s in seeds]))
@@ -220,6 +228,7 @@ def verify(workers: int) -> None:
 
 
 def main() -> None:
+    """Select, freeze, evaluate, then write results/backtest_results.json."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("--quick", action="store_true", help="few seeds, small grid: smoke run only")
     ap.add_argument("--workers", type=int, default=6)
@@ -248,7 +257,7 @@ def main() -> None:
                "sessions": [{"seed": s.seed, "excess": s.excess, "pnl": s.pnl,
                              "max_drawdown": s.max_drawdown, "fees": s.fees,
                              "plans": [asdict(p) for p in s.plans]} for s in sessions],
-               "curves": {str(s.seed): [e - c for e, c in zip(s.equity, s.control)]
+               "curves": {str(s.seed): [e - c for e, c in zip(s.equity, s.control, strict=False)]
                           for s in sessions}}
     name = "backtest_quick.json" if args.quick else "backtest_results.json"
     (RESULTS / name).write_text(json.dumps(payload))
