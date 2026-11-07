@@ -399,3 +399,41 @@ def test_a_restart_keeps_the_fills_already_charged_to_a_plan(tmp_path):
     again.portfolio = FakePortfolio(INTC=-60)
     again.on_open(dict(SCENARIO, late_join=True))
     assert again.signal.plans["INTC"].sold == 60
+
+
+# ── One process per seat ────────────────────────────────────────────────
+class FakeBoard:
+    def __init__(self, positions: dict, tick: int = 100) -> None:
+        self.tick = tick
+        self.traders = [{"team_id": "stt_11_trader_1", "net_worth": 100_000.0,
+                         "positions": positions}]
+        self.brokers = []
+
+
+def test_a_process_that_never_hears_its_fills_stands_down():
+    t = seat(portfolio=FakePortfolio(INTC=-20))     # the stale view
+    for _ in range(2):
+        t.on_leaderboard(FakeBoard({"INTC": 91}))
+    assert not t._stood_down                        # two boards can straddle a fill
+    t.on_leaderboard(FakeBoard({"INTC": 91}))
+    assert t._stood_down
+    assert t.on_tick(FakeMarket(INTC=(16.4, 16.5)), t.portfolio) is None
+    assert t.gate(sell("INTC", 5, 16.4), FakeMarket(), t.portfolio) is None
+
+
+def test_a_brief_disagreement_around_a_fill_is_not_a_duplicate():
+    t = seat(portfolio=FakePortfolio(INTC=-20))
+    t.on_leaderboard(FakeBoard({"INTC": 0}))
+    t.on_leaderboard(FakeBoard({"INTC": -20}))
+    t.on_leaderboard(FakeBoard({"INTC": 0}))
+    assert not t._stood_down
+
+
+def test_a_second_process_for_the_same_seat_will_not_start(tmp_path, monkeypatch):
+    import team.common as common
+    monkeypatch.setattr(common, "LOCK_DIR", tmp_path)
+    first = common.single_instance("stt_11_trader_9")
+    with pytest.raises(SystemExit):
+        common.single_instance("stt_11_trader_9")
+    first.close()
+    common.single_instance("stt_11_trader_9").close()   # free again once the first exits

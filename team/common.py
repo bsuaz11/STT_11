@@ -1,15 +1,23 @@
 """
 STT_11 — what the trader and broker seats share.
 
-TickClock     the exchange's logical clock; every timer in the bots runs on it
-HaltTracker   which symbols are halted, from events, rejects and timeouts
-leaderboard   short interest and team positions across the seats it lists
+TickClock       the exchange's logical clock; every timer in the bots runs on it
+HaltTracker     which symbols are halted, from events, rejects and timeouts
+leaderboard     short interest and team positions across the seats it lists
+single_instance one process per seat on this machine
 """
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import pathlib
 import re
+import sys
+from typing import IO, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from shared.messages import Leaderboard
 import time
 from collections.abc import Callable, Iterable
 
@@ -43,6 +51,7 @@ class TickClock:
             self._tick, self._at = float(tick), self._now()
 
     def now(self) -> float:
+        """The current tick, fractional between reports."""
         return self._tick + (self._now() - self._at) / self._sec_per_tick
 
 
@@ -60,6 +69,7 @@ class HaltTracker:
         self._market_until = 0.0
 
     def clear(self) -> None:
+        """Forget every halt (a new session)."""
         self._halted.clear()
         self._market_until = 0.0
 
@@ -90,6 +100,7 @@ class HaltTracker:
             self._halted[m.group(1)] = self._clock.now() + int(m.group(2))
 
     def is_halted(self, symbol: str) -> bool:
+        """True while the symbol, or the whole market, is halted."""
         now = self._clock.now()
         if now < self._market_until:
             return True
@@ -106,11 +117,11 @@ class HaltTracker:
         return gone
 
 
-def _entries(leaderboard) -> Iterable[dict]:
+def _entries(leaderboard: Leaderboard) -> Iterable[dict]:
     return list(leaderboard.traders or []) + list(leaderboard.brokers or [])
 
 
-def short_interest(leaderboard) -> dict[str, int]:
+def short_interest(leaderboard: Leaderboard) -> dict[str, int]:
     """Shares short per symbol across every seat — what the venue's borrow cap
     is measured against."""
     out: dict[str, int] = {}
@@ -121,7 +132,7 @@ def short_interest(leaderboard) -> dict[str, int]:
     return out
 
 
-def team_positions(leaderboard, exclude: str) -> dict[str, int]:
+def team_positions(leaderboard: Leaderboard, exclude: str) -> dict[str, int]:
     """Position per symbol of our seats other than `exclude` — the venue's
     position limit counts all of them together."""
     out: dict[str, int] = {}
@@ -131,6 +142,26 @@ def team_positions(leaderboard, exclude: str) -> dict[str, int]:
             for sym, qty in (entry.get("positions") or {}).items():
                 out[sym] = out.get(sym, 0) + int(qty)
     return out
+
+
+LOCK_DIR = pathlib.Path(__file__).resolve().parent.parent / "Phase2" / "state"
+
+
+def single_instance(seat: str) -> IO:
+    """Refuse to start a second process for the same seat.
+
+    The venue routes a seat's fills and position updates to its NEWEST
+    connection only. An older process for the same seat stays connected and
+    can still trade, but never hears that its orders filled, so it trades on
+    a stale position. Keep the returned handle open for the process lifetime.
+    """
+    LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    handle = open(LOCK_DIR / f"{seat}.lock", "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(f"{seat} is already running on this machine — not starting a second copy")
+    return handle
 
 
 def capital_baseline(net_worth: float, registered: float | None) -> float:
