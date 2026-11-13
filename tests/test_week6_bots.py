@@ -19,6 +19,13 @@ from Phase2.event_gap import EventGapSignal, GapParams  # noqa: E402
 from team.common import HaltTracker, TickClock  # noqa: E402
 from team.trader import MyTrader  # noqa: E402
 
+@pytest.fixture(autouse=True)
+def _two_signal_seats(monkeypatch):
+    """Week 6 ran two trader seats; these caps assume that."""
+    import team.trader
+    monkeypatch.setattr(team.trader, "SIGNAL_SEATS", 2)
+
+
 SCENARIO = {"scenario": {"flags": {"shorts_allowed": True}, "position_limit": 1000,
                          "maintenance_fraction": 0.4,
                          "config": {"SSR_TRIGGER_PCT": 0.06, "SHORT_LOCATE_CAP": 2000,

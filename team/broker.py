@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -25,26 +26,67 @@ import broker.config as _broker_config
 from shared.messages import CancelOrder, PlaceOrder
 
 from arena import Broker
-from arena.broker import _AdaptedBrokerBot
-from team.common import HaltTracker, TickClock, capital_baseline, short_interest, single_instance
+from arena.broker import _AdaptedBrokerBot, _AdaptedState
+from team.common import (
+    HaltTracker,
+    HotPathMeter,
+    PriceTrack,
+    TickClock,
+    capital_baseline,
+    short_interest,
+    single_instance,
+)
 from team.config import CAPITAL
 
 if TYPE_CHECKING:
-    from shared.messages import Leaderboard, OrderAck, PortfolioUpdate, SessionEvent, TradeExecution
+    from shared.messages import (
+        Leaderboard,
+        OrderAck,
+        PortfolioUpdate,
+        SessionEvent,
+        TradeExecution,
+    )
 
 logger = logging.getLogger(__name__)
 
 # The venue allows 20 order/cancel messages per exchange tick (1 s), metered
 # per TEAM — the trader seats share it — with a burst allowance of 3× that
 # (exchange/config.py ORDER_QUOTA_PER_TICK, ORDER_QUOTA_BURST_MULTIPLE; weeks
-# 1-6 use the default, week 7+ set "order_quota" in the scenario). Requoting
-# one symbol cancels its old ladder and posts a new one (up to 12 messages
-# with 3 levels), so spend at most this many messages in any rolling second.
-# The traders send at most ~2/s each (one IOC per 0.5 s tick), so 14 + 2 + 2
-# stays under 20. If the scenario sets a quota, or a RATE_LIMITED reject names
-# one, the budget drops to that quota minus TRADER_RESERVE.
-MESSAGE_BUDGET = 14
-TRADER_RESERVE = 5
+# 1-6 use the default, week 7+ set "order_quota" in the scenario). If the
+# scenario sets a quota, or a RATE_LIMITED reject names one, the budget drops
+# to that quota minus TRADER_RESERVE.
+#
+# Week 7: quota 8/tick for the whole team. trader_1 holds itself to 2/s (4/s
+# in a flash), so the broker spends at most 5 in any rolling second: the
+# steady state is 7 < 8 and the venue's burst bucket (24) stays nearly full
+# for the flash bursts and the pull-everything moments (halts, close).
+# One quote level per side (QUOTE_LEVELS) makes a requote 2 cancels + 2
+# orders instead of 6 + 6, and a requote only when the centre has moved
+# REQUOTE_HALF_FRACTION of our half-width keeps cancels — and the $0.05
+# cancel fee on each — sparing.
+# 5/s fits the week-7 quota (8) even before the bot has heard the week's
+# rules — the block starts at the week switch, ten minutes before the open
+# that carries them — and is far more than open play (quota 20) needs.
+MESSAGE_BUDGET = 5
+TRADER_RESERVE = 3
+QUOTE_LEVELS = int(os.environ.get("STT_QUOTE_LEVELS", "1"))
+QUOTE_SIZE = int(os.environ.get("STT_QUOTE_SIZE", "20"))
+REQUOTE_HALF_FRACTION = 0.5
+RATE_LIMIT_BACKOFF_SEC = 1.0
+CANCEL_FEE = 0.05                   # week 7 config CANCEL_FEE_PER_ORDER, per order cancelled
+STATS_EVERY_SEC = 60.0
+_broker_config.QUOTE_LEVELS = QUOTE_LEVELS      # read by the stock quote_symbol()
+_broker_config.QUOTE_SIZE = QUOTE_SIZE
+
+# ── Flashes (week 7+) ────────────────────────────────────────────────────
+# A flash jumps one symbol's mark 1.5–2.5% for ~2 s, then walks back. Our
+# resting quotes around the pre-flash price are the RIGHT quotes: whoever
+# lifts them trades at fair ± half-spread. The loss comes from requoting AT
+# the flashed price and being hit on the way back. So on a FLASH event — or a
+# single-snapshot jump of FLASH_JUMP_PCT, whichever we see first — freeze the
+# symbol: no cancel, no requote, until the flash is over.
+FLASH_JUMP_PCT = 0.01
+FLASH_FREEZE_SEC = 3.0              # revert_ticks (2) + 1, when the event doesn't say
 
 # Pricing. In the headless simulator at the fees of the time (30 bps taker,
 # 5 bps rebate; the venue now charges 40/0, see /api/venues), a 30 bps minimum width plus inventory skew beat the default
@@ -95,6 +137,7 @@ LISTING_MAX_SHARES = 50             # long and short, instead of the BROKER_MAX_
 # calm market the floor wins and nothing changes.
 VOL_WINDOW = 30
 VOL_MULT = 3.0
+VOL_HORIZON_SEC = 0.5               # VOL_MULT was calibrated on 0.5 s snapshot returns
 MAX_SPREAD_BPS = 300                # never quote wider than this, all widening included
 
 # ── Toxic flow ───────────────────────────────────────────────────────────
@@ -167,7 +210,10 @@ class _RejectTap:
         return self._tap()
 
     async def _tap(self) -> AsyncIterator[str]:
+        hot = self._bot.hot
+        clock = time.perf_counter
         async for raw in self._ws:
+            t0 = clock()
             if '"error"' in raw:
                 try:
                     msg = json.loads(raw)
@@ -175,7 +221,34 @@ class _RejectTap:
                         self._bot._on_reject(msg.get("code"), msg.get("message"))
                 except Exception:
                     logger.exception("ignoring unreadable error")
-            yield raw
+            yield raw                             # the listener handles it before we resume
+            hot.record(clock() - t0)
+
+
+class _History(dict):
+    """price_history whose every series is a PriceTrack, including the ones
+    the stock listener creates with setdefault() for new listings."""
+
+    def setdefault(self, key: str, default: Any = None) -> PriceTrack:
+        track = self.get(key)
+        if track is None:
+            track = self[key] = PriceTrack(maxlen=100, window=VOL_WINDOW, jump_pct=FLASH_JUMP_PCT)
+        return track
+
+
+class _RollingState(_AdaptedState):
+    """Hands spread() the live PriceTrack (O(1) vol) instead of a copied list."""
+
+    def __init__(self, owner: Broker) -> None:
+        super().__init__(owner)
+        hist = _History()
+        for sym in self.price_history:
+            hist.setdefault(sym)
+        self.price_history = hist
+
+    def _price_and_history(self, symbol: str):
+        price = self.exchange_prices.get(symbol) or self.yahoo_prices.get(symbol)
+        return price, self.price_history.setdefault(symbol)
 
 
 class BudgetedBrokerBot(_AdaptedBrokerBot):
@@ -189,7 +262,14 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
 
     def __init__(self, owner: MyBroker, exchange_url: str | None = None) -> None:
         super().__init__(owner, exchange_url)
+        self.state = _RollingState(owner)
         self._sent = deque()                    # send times, for the quota
+        self._backoff_until = 0.0               # after a RATE_LIMITED
+        self._frozen: dict[str, float] = {}     # symbol -> flash freeze end (monotonic)
+        self.msgs = self.cancels = self.rate_limited = self.not_found = 0
+        self.flashes = 0
+        self.hot = HotPathMeter()
+        self._stats_at = time.monotonic()
         self._orders: dict[int, dict] = {}      # our orders that may still fill
         self._by_oid: dict[str, int] = {}       # venue order id -> ledger key
         self._filled_oids: set[str] = set()     # certainly filled: don't cancel them
@@ -262,6 +342,8 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             # quotes just cancelled are still counted as open.
             if not centre or now < self._flatten_retry.get(sym, 0.0):
                 continue
+            if self._room() < self._requote_cost(sym) - 2 * _broker_config.QUOTE_LEVELS + 1:
+                continue                          # no quota this pass: next one
             self._flatten_retry[sym] = now + FLATTEN_RETRY_SEC
             await self.cancel_quotes(sym)
             side = "sell" if pos > 0 else "buy"
@@ -362,6 +444,8 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 "sent": time.monotonic()}
             self._next_key += 1
         elif isinstance(msg, CancelOrder):
+            if msg.order_id not in self._filled_oids:
+                self.cancels += 1
             if msg.order_id in self._filled_oids:
                 # Already filled: cancelling it only earns an ORDER_NOT_FOUND.
                 self._filled_oids.discard(msg.order_id)
@@ -370,6 +454,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             if k is not None and k in self._orders:
                 self._orders[k]["dead"] = time.monotonic()
         self._sent.append(time.monotonic())
+        self.msgs += 1
         await super()._send(msg)
 
     def _on_order_ack(self, msg: OrderAck) -> None:
@@ -434,10 +519,23 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
 
     def _on_reject(self, code: str | None, message: str | None) -> None:
         if code == "RATE_LIMITED":
+            self.rate_limited += 1
+            self._backoff_until = time.monotonic() + RATE_LIMIT_BACKOFF_SEC
             m = re.search(r"send (\d+)", message or "")
             if m:
                 self._budget = min(self._budget, max(2, int(m.group(1)) - TRADER_RESERVE))
-            logger.warning("RATE_LIMITED: %s — budget now %d/s", message, self._budget)
+            logger.warning("RATE_LIMITED: %s — budget now %d/s, pausing %.0fs",
+                           message, self._budget, RATE_LIMIT_BACKOFF_SEC)
+            return
+        if code == "ORDER_NOT_FOUND":           # spent quota, no fee: already filled or gone
+            self.not_found += 1
+            return
+        if code == "STP_CANCEL":                # a team order crossed our quote: that side is gone
+            m = re.search(r"resting (buy|sell) \d+ (\S+) @", message or "")
+            if m:
+                resting = self.state.resting_orders.get(m.group(2))
+                if resting is not None:
+                    resting[f"{m.group(1)}_qty"] = 0   # needs_requote() now sees a missing side
             return
         if code == "SYMBOL_HALTED":             # a halt we never heard about (reconnect)
             self._halts.on_reject(message)
@@ -521,8 +619,25 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                         "venue quota %s/tick → broker budget %d/s",
                         self._shorts_ok, BROKER_MAX_SHORT, self._locate_cap,
                         quota or "default (20)", self._budget)
+        elif msg.event == "WEEK_CHANGED":
+            # The graded block starts here: count its messages and fees alone.
+            self._maybe_log_stats(force=True)
+            self.msgs = self.cancels = self.rate_limited = self.not_found = self.flashes = 0
+            quota = data.get("order_quota")
+            if quota:
+                self._budget = min(MESSAGE_BUDGET, max(2, int(quota) - TRADER_RESERVE))
+            logger.info("WEEK → %s: counters reset, broker budget %d/s",
+                        data.get("week"), self._budget)
         elif msg.event == "SSR_ON" and data.get("symbol"):
             self._ssr.add(data["symbol"])
+        elif msg.event == "FLASH" and data.get("symbol"):
+            self.flashes += 1
+            revert = data.get("revert_ticks")
+            secs = (float(revert) + 1) if isinstance(revert, (int, float)) else FLASH_FREEZE_SEC
+            self._frozen[data["symbol"]] = max(self._frozen.get(data["symbol"], 0.0),
+                                               time.monotonic() + secs)
+            logger.info("FLASH %s %s: holding its quotes as they are for %.0fs",
+                        data["symbol"], data.get("pct"), secs)
         elif msg.event == "TRADING_HALT" and data.get("symbol"):
             await self.cancel_quotes(data["symbol"])
         elif msg.event in ("MARKET_HALT", "SESSION_PRECLOSE"):
@@ -531,6 +646,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             self._closing = self._closing or msg.event == "SESSION_PRECLOSE"
             logger.warning("%s — pulling every quote", msg.event)
             await self.cancel_all_quotes()
+            self._maybe_log_stats(force=True)
         elif msg.event == "SESSION_PREOPEN":
             self._closing = False
         elif msg.event == "CALENDAR":
@@ -550,12 +666,52 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 self._paused[sym] = time.monotonic() + SHOCK_PAUSE_SEC
             logger.info("Pulling quotes for %ss: %s", SHOCK_PAUSE_SEC, ", ".join(syms))
 
+    # ── Flash freeze ────────────────────────────────────────────────────
+    def _is_frozen(self, sym: str) -> bool:
+        """During a flash (announced, or a one-snapshot jump we saw first)."""
+        now = time.monotonic()
+        if now < self._frozen.get(sym, 0.0):
+            return True
+        track = self.state.price_history.get(sym)
+        return track is not None and now - track.last_jump < FLASH_FREEZE_SEC
+
+    def needs_requote(self, symbol: str, centre: float) -> bool:
+        """Stock rule, but the drift that triggers a requote is at least
+        REQUOTE_HALF_FRACTION of our half-width: each requote costs 4 messages
+        of an 8-per-tick team quota and $0.05 per cancel."""
+        last = self.state.last_quote_prices.get(symbol)
+        if last is None:
+            return True
+        resting = self.state.resting_orders.get(symbol, {})
+        if not resting.get("buy_qty") or not resting.get("sell_qty"):
+            return True
+        half = self._owner._half_spread.get(symbol, 0.0)
+        if abs(centre - last) >= max(self.requote_threshold(centre), REQUOTE_HALF_FRACTION * half):
+            return True
+        age = time.time() - self.state.last_quote_time.get(symbol, 0.0)
+        return age >= _broker_config.QUOTE_MAX_AGE_SEC
+
+    def _maybe_log_stats(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self._stats_at < STATS_EVERY_SEC:
+            return
+        self._stats_at = now
+        billed = max(0, self.cancels - self.not_found)
+        logger.info("STATS quota: %d msgs sent (%d cancels, %d not found), %d RATE_LIMITED (%.1f%%), "
+                    "budget %d/s | cancel fees ≈ $%.2f (%d × $%.2f) | flashes %d | hot path: %s",
+                    self.msgs, self.cancels, self.not_found, self.rate_limited,
+                    100 * self.rate_limited / max(1, self.msgs), self._budget,
+                    billed * CANCEL_FEE, billed, CANCEL_FEE, self.flashes, self.hot.report())
+        self.hot.reset()
+
     # ── Requoting under the budget ──────────────────────────────────────
     def _room(self) -> int:
         """Messages we may still send without exceeding the per-second quota."""
         now = time.monotonic()
         while self._sent and now - self._sent[0] > 1.05:
             self._sent.popleft()
+        if now < self._backoff_until:
+            return 0
         return self._budget - len(self._sent)
 
     def _requote_cost(self, symbol: str) -> int:
@@ -602,9 +758,10 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                     if cost <= budget:
                         budget -= cost
                         await self.cancel_quotes(sym)
+            self._maybe_log_stats()
             due = []
             for sym in list(self._quote_symbols):
-                if self._blocked_symbol(sym):
+                if self._blocked_symbol(sym) or self._is_frozen(sym):
                     continue
                 centre = self.quote_centre(sym)
                 if centre and self.needs_requote(sym, centre):
@@ -642,11 +799,17 @@ class MyBroker(Broker):
             return None
         width = max(min(0.30, price * 25 / 1e4),  # the default width
                     price * MIN_SPREAD_BPS / 1e4)
-        h = history[-(VOL_WINDOW + 1):]
-        rets = [b / a - 1 for a, b in zip(h, h[1:], strict=False) if a > 0]
-        if len(rets) >= VOL_WINDOW // 2:
-            mean = sum(rets) / len(rets)
-            vol = (sum((r - mean) ** 2 for r in rets) / len(rets)) ** 0.5
+        if isinstance(history, PriceTrack):     # live: O(1) rolling stats
+            vol = (history.vol(VOL_HORIZON_SEC)
+                   if history.returns.n >= VOL_WINDOW // 2 else None)
+        else:                                   # a plain list (tests, other callers)
+            h = list(history)[-(VOL_WINDOW + 1):]
+            rets = [b / a - 1 for a, b in zip(h, h[1:], strict=False) if a > 0]
+            vol = None
+            if len(rets) >= VOL_WINDOW // 2:
+                mean = sum(rets) / len(rets)
+                vol = (sum((r - mean) ** 2 for r in rets) / len(rets)) ** 0.5
+        if vol:
             width = max(width, VOL_MULT * vol * price)
         now = time.monotonic()
         if now < self._listing_until.get(symbol, 0.0):
