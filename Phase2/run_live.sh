@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase2/run_live.sh — run the team's seats for a live block and keep them up.
 #
-#   Phase2/run_live.sh                       # trader_1, trader_2, broker_1
+#   Phase2/run_live.sh                       # trader_1, broker_1 (week 7 lineup)
 #   SEATS="stt_11_trader_1" Phase2/run_live.sh
 #
 # Each seat restarts if its process ever dies, the Mac is kept awake, and every
@@ -16,7 +16,7 @@ VENV="${VENV:-../.venv}"
 export PYTHONPATH=engine:.
 export PYTHONUNBUFFERED=1
 
-SEATS="${SEATS:-stt_11_trader_1 stt_11_trader_2 stt_11_broker_1}"
+SEATS="${SEATS:-stt_11_trader_1 stt_11_broker_1}"   # add trader_2 only with SIGNAL_SEATS=2
 RESTART_DELAY="${RESTART_DELAY:-3}"
 LOGDIR="${LOGDIR:-Phase2/logs/$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$LOGDIR"

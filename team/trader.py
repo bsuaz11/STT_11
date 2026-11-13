@@ -22,8 +22,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import pathlib
+import statistics
+import time
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
@@ -34,8 +38,15 @@ from shared.messages import IPOSubscribe, OrderAck, PlaceOrder, Signal
 from arena import Trader
 from arena.trader import _AdaptedTraderBot
 from Phase2.event_gap import EventGapSignal, GapParams, Plan
-from team.common import (HaltTracker, TickClock, capital_baseline, short_interest,
-                         single_instance, team_positions)
+from team.common import (
+    HaltTracker,
+    HotPathMeter,
+    TickClock,
+    capital_baseline,
+    short_interest,
+    single_instance,
+    team_positions,
+)
 from team.config import CAPITAL
 
 if TYPE_CHECKING:
@@ -49,7 +60,9 @@ SEAT_ROLES = {
     "stt_11_trader_1": {"signal", "probe", "ipo"},
     "stt_11_trader_2": {"signal", "probe", "ipo"},
 }
-SIGNAL_SEATS = 2              # seats sharing the team's room in one symbol
+# Seats sharing the team's room in one symbol. Week 7 runs trader_1 alone;
+# set SIGNAL_SEATS=2 in the shell if trader_2 trades too.
+SIGNAL_SEATS = max(1, int(os.environ.get("SIGNAL_SEATS", "1")))
 SKIP_SYMBOLS = ("ARENA10",)   # futures are locked until week 9
 
 # ── Hard limits (scenario values replace these at SESSION_OPEN) ──────────
@@ -85,6 +98,10 @@ PROBE_SHARES = 5
 PROBE_SYMBOL = "MSFT"
 PROBE_HOLD_TICKS = 10
 PROBE_DELAY_TICKS = 3         # let the book refill after a resume
+# Unfilled buys before the probe gives up. Our own broker's ask is often the
+# touch; the venue's self-trade prevention then cancels it instead of filling
+# us, and retrying every tick churns the team's quota and cancel fees.
+PROBE_MAX_BUYS = 3
 
 # ── IPO ──────────────────────────────────────────────────────────────────
 # Each seat bids this share of its cash at the top of the range (the sure
@@ -99,6 +116,37 @@ LISTING_STOP_PCT = 0.04       # sell if it breaks this far below the offer
 LISTING_TRAIL_PCT = 0.03      # or falls this far from its high, once in profit
 LISTING_MIN_GAIN_PCT = 0.03
 LISTING_MAX_HOLD_TICKS = 1200
+
+# ── Flashes (week 7+) ────────────────────────────────────────────────────
+# A FLASH is an unannounced 1.5–2.5% jump in one symbol on this venue that
+# walks back within `revert_ticks` (~2 s). Fade it the moment the event lands:
+# sell an up-flash / buy a down-flash with an IOC limited to fair ± edge, where
+# fair is the pre-flash EWMA of the venue mark and edge covers a taker fee in
+# and out plus a buffer. A flash too small for that edge still gets the order
+# (it just doesn't fill): acting is graded, a losing fill is not worth taking.
+# Exit with an IOC once the price is back near fair, or at the time stop.
+FLASH_NOTIONAL = 25_000.0     # dollars per flash
+FLASH_MAX_SHARES = 300
+FLASH_BUFFER_BPS = 15         # profit required on top of two taker fees
+FLASH_RETRY_FRACTION = 0.6    # re-try an unfilled entry only this early in the flash
+FLASH_REVERTED = 0.25         # "reverted" once within this share of the jump from fair
+FLASH_EXIT_GRACE_TICKS = 1.0  # exit anyway this long after the advertised revert
+FLASH_MAX_HOLD_TICKS = 20     # then cross harder until flat
+FLASH_EXIT_SLIP_BPS = 20
+FLASH_PANIC_SLIP_BPS = 60
+FLASH_SHORT_HEADROOM = 50     # shares left under the market-wide locate cap
+FAIR_ALPHA = 0.05             # EWMA of the mark per snapshot (~4 s at 0.2 s)
+FAIR_JUMP_PCT = 0.01          # a mark this far off fair is a flash: don't learn it…
+FAIR_RESET_SNAPSHOTS = 25     # …unless it stays there this long (a real move)
+
+# ── Message quota (week 7: 8 orders+cancels per tick, per TEAM) ──────────
+# The broker keeps itself to quota − TRADER_RESERVE (3) per second; the trader
+# stays inside that reserve. Flash orders may borrow from the venue's burst
+# allowance (3× the quota), which the steady state leaves almost full.
+TRADER_MSGS_PER_SEC = 2
+TRADER_FLASH_BURST = 4        # flash orders may go up to this many per second
+QUOTA_BACKOFF_TICKS = 1.0     # after a RATE_LIMITED, only flash orders for this long
+STATS_EVERY_SEC = 60.0
 
 STATE_DIR = pathlib.Path(__file__).resolve().parent.parent / "Phase2" / "state"
 STATE_MAX_AGE_TICKS = 3600    # older than a block: it belongs to another session
@@ -116,6 +164,7 @@ class RoundTrip:
         self.phase = "buy"
         self.held = 0
         self.wait_until = not_before
+        self.buys = 0
 
     def on_fill(self, side: str, quantity: int, now: float) -> None:
         """Count a fill of the probe's own order and advance its phase."""
@@ -127,6 +176,37 @@ class RoundTrip:
             self.held = max(0, self.held - quantity)
             if self.held == 0 and self.phase == "sell":
                 self.phase = "done"
+
+
+class FlashTrade:
+    """One flash: fade it with an IOC, then buy/sell back once it reverts.
+
+    phase  entry → hold → done   (entry with no fill goes straight to done)
+    held   signed shares this trade has put on (negative after an up-flash)
+    """
+
+    def __init__(self, symbol: str, pct: float, fair: float, t0: float,
+                 revert_ticks: float, qty: int, edge: float, wall: float) -> None:
+        self.symbol, self.pct, self.fair, self.t0 = symbol, pct, fair, t0
+        self.revert_ticks = revert_ticks
+        self.side = "sell" if pct > 0 else "buy"          # fade the jump
+        self.qty = qty
+        # The IOC limit: only fills where the fade clears two fees + buffer.
+        self.limit = (math.ceil(fair * (1 + edge) * 100) / 100 if pct > 0
+                      else math.floor(fair * (1 - edge) * 100) / 100)
+        self.phase = "entry"
+        self.tries = 0
+        self.held = 0
+        self.cash = 0.0                                    # + received, − paid
+        self.notional = 0.0
+        self.wall = wall                                   # monotonic, at the event
+        self.react_ms: float | None = None
+
+    def on_fill(self, side: str, quantity: int, price: float) -> None:
+        signed = quantity if side == "buy" else -quantity
+        self.held += signed
+        self.cash -= signed * price
+        self.notional += quantity * price
 
 
 class MyTrader(Trader):
@@ -179,26 +259,165 @@ class MyTrader(Trader):
         # IPO state
         self._ipo: dict[str, dict] = {}           # symbol -> indication awaiting confirmation
         self._listings: dict[str, dict] = {}      # symbol -> {offer, high, t0}
+        # Flashes
+        self._fair: dict[str, float] = {}         # symbol -> EWMA of the mark, jumps excluded
+        self._fair_off: dict[str, int] = {}       # symbol -> snapshots in a row far from fair
+        self._flash: dict[str, FlashTrade] = {}   # symbol -> live flash trade
+        self.flash_log: list[dict] = []           # one row per flash seen this process
+        # Quota accounting (this seat's share of the team's messages)
+        self.msgs_sent = 0
+        self.rate_limited = 0
+        self._quota_backoff_until = 0.0
+        self.hot = HotPathMeter()
+        self._stats_at = time.monotonic()
 
     # ── Each tick ───────────────────────────────────────────────────────
     def on_tick(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
-        """Refresh state, then: risk off > signal > listing exit > probe."""
+        """Refresh state, then: risk off > flash > signal > listing exit > probe."""
         self._cash = portfolio.cash
         for sym in self.halts.expired():
             self._on_resumed(sym)
         if self._in_auction or self._liquidated or self._stood_down:
             return None
         for sym in market.symbols():
-            mid = market.mid_price(sym)
-            if mid:
-                self._open_mid.setdefault(sym, mid)
+            if sym not in self._open_mid:
+                mid = market.mid_price(sym)
+                if mid:
+                    self._open_mid[sym] = mid
 
         self._risk_off = self._equity(market, portfolio) < self._risk_off_level()
         if self._risk_off:
             return self._reduce_largest(market, portfolio)
-        return (self._signal_order(market, portfolio)
+        return (self._flash_order(market, portfolio)
+                or self._signal_order(market, portfolio)
                 or self._listing_exit(market, portfolio)
                 or self._probe_order(market, portfolio))
+
+    # ── Role: flash ─────────────────────────────────────────────────────
+    def _on_flash(self, data: dict) -> None:
+        """A FLASH just hit this venue: set up the fade (sent by the next on_tick,
+        which TakerBot runs at once)."""
+        sym, pct = data.get("symbol"), data.get("pct")
+        if not sym or not isinstance(pct, (int, float)) or not pct:
+            return
+        pct = float(pct)
+        if abs(pct) > 1:                         # tolerate "2.0" meaning 2%
+            pct /= 100
+        row = {"symbol": sym, "pct": pct, "tick": data.get("tick"), "wall": time.monotonic(),
+               "acted": False, "react_ms": None, "filled": 0, "pnl": 0.0, "why": ""}
+        self.flash_log.append(row)
+        # The venue sends its exact pre-flash fair value; our EWMA is the fallback.
+        start = data.get("start_price")
+        fair = (float(start) if isinstance(start, (int, float)) and start > 0
+                else self._fair.get(sym) or self._ref.get(sym))
+        why = ("no signal role" if "signal" not in self.roles else
+               "skipped symbol" if sym in SKIP_SYMBOLS else
+               "event trade open in it" if sym in self.signal.plans else
+               "already fading it" if sym in self._flash else
+               "no fair price yet" if not fair else
+               "halted" if self.halts.is_halted(sym) else
+               "auction" if self._in_auction else
+               "risk off / liquidated / stood down" if (self._risk_off or self._liquidated
+                                                         or self._stood_down) else "")
+        if why:
+            row["why"] = why
+            logger.info("FLASH %s %+.2f%%: not fading (%s)", sym, pct * 100, why)
+            return
+        edge = 2 * self.signal.taker_fee + FLASH_BUFFER_BPS / 1e4
+        qty = min(FLASH_MAX_SHARES, int(FLASH_NOTIONAL / fair))
+        revert = float(data.get("revert_ticks") or 2)
+        self._flash[sym] = FlashTrade(sym, pct, fair, self.clock.now(), revert, qty, edge,
+                                      row["wall"])
+        self._flash[sym].row = row
+        logger.info("FLASH %s %+.2f%%: fair=%.2f, fading with %s %d @ %.2f (edge %.0f bps)",
+                    sym, pct * 100, fair, self._flash[sym].side, qty,
+                    self._flash[sym].limit, edge * 1e4)
+
+    def _flash_room(self, ft: FlashTrade, portfolio: Portfolio) -> int:
+        """Shares the fade may trade now: cash/limits for a buy; for a sell what
+        is held plus a short the market-wide borrow can still cover."""
+        pos = portfolio.positions.get(ft.symbol, 0)
+        if ft.side == "buy":
+            return max(0, min(ft.qty, self._seat_caps(ft.symbol)[0] - pos,
+                              int(portfolio.cash * CASH_USE / ft.limit)))
+        sell = max(0, pos)
+        if (self._shorts_ok and ft.symbol not in self._ssr
+                and self.clock.now() >= self._no_short_until):
+            borrow = (self._locate_cap - self._short_interest.get(ft.symbol, 0)
+                      - FLASH_SHORT_HEADROOM)
+            short_cap = self._seat_caps(ft.symbol)[1] - max(0, -pos)
+            sell += max(0, min(borrow, short_cap))
+        return min(ft.qty, sell)
+
+    def _flash_order(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
+        now = self.clock.now()
+        for sym, ft in list(self._flash.items()):
+            if self.halts.is_halted(sym):
+                continue
+            bid, ask = market.best_bid(sym), market.best_ask(sym)
+            age = now - ft.t0
+            if ft.phase == "entry":
+                if self._is_pending(sym):
+                    continue
+                if ft.held:                       # the IOC filled: wait for the revert
+                    ft.phase = "hold"
+                elif ft.tries == 0 or (
+                        ft.tries == 1 and age < ft.revert_ticks * FLASH_RETRY_FRACTION
+                        and ((ft.side == "sell" and bid and bid >= ft.limit)
+                             or (ft.side == "buy" and ask and ask <= ft.limit))):
+                    qty = self._flash_room(ft, portfolio)
+                    if qty <= 0:
+                        self._flash_done(ft, "no room (limits, cash or borrow)")
+                        continue
+                    ft.tries += 1
+                    self._mark_pending(sym)
+                    return Signal(symbol=sym, side=ft.side, quantity=qty, price=ft.limit)
+                else:
+                    self._flash_done(ft, "no fill at the edge")
+                    continue
+            if ft.phase == "hold":
+                if ft.held == 0:
+                    self._flash_done(ft, "flat")
+                    continue
+                if self._is_pending(sym):
+                    continue
+                back = ft.fair * (1 + FLASH_REVERTED * ft.pct)
+                reverted = ((ft.held < 0 and ask and ask <= back)
+                            or (ft.held > 0 and bid and bid >= back))
+                if not (reverted or age >= ft.revert_ticks + FLASH_EXIT_GRACE_TICKS):
+                    continue
+                slip = (FLASH_PANIC_SLIP_BPS if age >= FLASH_MAX_HOLD_TICKS
+                        else FLASH_EXIT_SLIP_BPS) / 1e4
+                self._mark_pending(sym)
+                if ft.held < 0:
+                    ref = ask or ft.fair
+                    return Signal(symbol=sym, side="buy", quantity=min(-ft.held, MAX_ORDER_SHARES),
+                                  price=round(ref * (1 + slip), 2))
+                ref = bid or ft.fair
+                return Signal(symbol=sym, side="sell", quantity=min(ft.held, MAX_ORDER_SHARES),
+                              price=round(ref * (1 - slip), 2))
+        return None
+
+    def _flash_done(self, ft: FlashTrade, why: str) -> None:
+        fees = ft.notional * self.signal.taker_fee
+        pnl = ft.cash - fees if ft.held == 0 else 0.0
+        row = getattr(ft, "row", {})
+        row.update(why=why, pnl=pnl)
+        self._flash.pop(ft.symbol, None)
+        logger.info("FLASH %s done (%s): traded $%.0f, pnl %+.2f after ~%.2f fees",
+                    ft.symbol, why, ft.notional, pnl, fees)
+
+    def flash_summary(self) -> str:
+        rows = self.flash_log
+        acted = [r for r in rows if r["acted"]]
+        rts = [r["react_ms"] for r in acted if r["react_ms"] is not None]
+        filled = [r for r in rows if r["filled"]]
+        s = f"flashes seen {len(rows)}, acted on {len(acted)}, filled {len(filled)}"
+        if rts:
+            s += f", reaction median {statistics.median(rts):.0f} ms / slowest {max(rts):.0f} ms"
+        if filled:
+            s += f", flash pnl {sum(r['pnl'] for r in filled):+.2f}"
+        return s
 
     # ── Role: signal ────────────────────────────────────────────────────
     def _signal_order(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
@@ -270,7 +489,8 @@ class MyTrader(Trader):
         if self._probe is None or self._probe.phase == "done":
             # Never in a symbol the signal is trading: its fills would count there.
             ready = [s for s in self._probe_queue
-                     if s not in self.signal.plans and not self.halts.is_halted(s)]
+                     if s not in self.signal.plans and s not in self._flash
+                     and not self.halts.is_halted(s)]
             if not ready:
                 return None
             self._probe_queue.remove(ready[0])
@@ -279,9 +499,14 @@ class MyTrader(Trader):
         p = self._probe
         bid, ask = market.best_bid(p.symbol), market.best_ask(p.symbol)
         if (now < p.wait_until or self.halts.is_halted(p.symbol) or self._is_pending(p.symbol)
-                or p.symbol in self.signal.plans):
+                or p.symbol in self.signal.plans or p.symbol in self._flash):
             return None
         if p.phase == "buy" and ask:
+            if p.buys >= PROBE_MAX_BUYS:
+                logger.info("Probe %s: no fill after %d tries — dropping it", p.symbol, p.buys)
+                p.phase = "done"
+                return None
+            p.buys += 1
             px = round(ask * (1 + SLIP_BPS / 1e4), 2)
             if not portfolio.can_buy(p.symbol, PROBE_SHARES, px):
                 p.phase = "done"
@@ -436,8 +661,44 @@ class MyTrader(Trader):
         logger.info("Gate blocked %s %d %s: %s", sig.side, sig.quantity, sig.symbol, why)
 
     def note_sent(self, sig: Signal) -> None:
-        """Count an IOC as in flight until its fills land or it dies."""
+        """Count an IOC as in flight until its fills land or it dies, and time
+        the reaction to a flash on its first order."""
         self._inflight.append([self.clock.now() + PENDING_TICKS, sig.symbol, sig.side, sig.quantity])
+        self.msgs_sent += 1
+        ft = self._flash.get(sig.symbol)
+        if ft is not None and ft.react_ms is None:
+            ft.react_ms = (time.monotonic() - ft.wall) * 1000
+            row = getattr(ft, "row", {})
+            row.update(acted=True, react_ms=ft.react_ms)
+            logger.info("FLASH %s reaction: order sent %.0f ms after the event reached us",
+                        sig.symbol, ft.react_ms)
+
+    # ── Message quota ───────────────────────────────────────────────────
+    def is_urgent(self, sym: str) -> bool:
+        """Orders for a live flash may use the venue's burst allowance."""
+        return sym in self._flash
+
+    def order_held(self, sym: str) -> None:
+        """An order the quota held back: free the symbol to try again at once."""
+        self._pending.pop(sym, None)
+        ft = self._flash.get(sym)
+        if ft is not None and ft.phase == "entry" and ft.tries > 0:
+            ft.tries -= 1
+
+    def quota_backoff(self) -> bool:
+        return self.clock.now() < self._quota_backoff_until
+
+    def maybe_log_stats(self) -> None:
+        """Once a minute: quota use, hot-path timing and the flash scorecard."""
+        now = time.monotonic()
+        if now - self._stats_at < STATS_EVERY_SEC:
+            return
+        self._stats_at = now
+        sent = self.msgs_sent
+        logger.info("STATS quota: %d orders sent, %d RATE_LIMITED (%.1f%%) | hot path: %s | %s",
+                    sent, self.rate_limited, 100 * self.rate_limited / max(1, sent + self.rate_limited),
+                    self.hot.report(), self.flash_summary())
+        self.hot.reset()
 
     def _in_flight(self, sym: str, side: str) -> int:
         """Shares of IOCs sent in sym/side whose fills may not have landed. An
@@ -457,6 +718,18 @@ class MyTrader(Trader):
         """Keep the venue mark, which the LULD band and maintenance check use."""
         if ref_price > 0:
             self._ref[symbol] = ref_price
+            fair = self._fair.get(symbol)
+            if fair is None:
+                self._fair[symbol] = ref_price
+            elif abs(ref_price - fair) > FAIR_JUMP_PCT * fair:
+                # A flash: keep the pre-flash fair, unless the move sticks.
+                n = self._fair_off.get(symbol, 0) + 1
+                self._fair_off[symbol] = n
+                if n >= FAIR_RESET_SNAPSHOTS:
+                    self._fair[symbol], self._fair_off[symbol] = ref_price, 0
+            else:
+                self._fair_off[symbol] = 0
+                self._fair[symbol] = fair + FAIR_ALPHA * (ref_price - fair)
 
     def on_open(self, data: dict) -> None:
         """SESSION_OPEN: adopt the week's rules from the scenario it carries."""
@@ -476,6 +749,7 @@ class MyTrader(Trader):
             self._state_loaded = True
             self.signal.plans.clear()
             self._listings.clear()
+            self._flash.clear()
             self._save_state()
             self._ssr.clear()
             self._open_mid.clear()
@@ -543,7 +817,11 @@ class MyTrader(Trader):
     def on_reject(self, code: str | None, message: str | None) -> None:
         """React to a venue reject: shorts, halts, liquidation, IPO cash."""
         logger.warning("REJECT [%s]: %s", code, message)
-        if code in SHORT_REJECTS:                 # a rejected short: no new ones for a while
+        if code == "RATE_LIMITED":                # the team's quota is spent: ease off
+            self.rate_limited += 1
+            self.msgs_sent = max(0, self.msgs_sent - 1)   # it never reached the book
+            self._quota_backoff_until = self.clock.now() + QUOTA_BACKOFF_TICKS
+        elif code in SHORT_REJECTS:                 # a rejected short: no new ones for a while
             self._no_short_until = self.clock.now() + 30
         elif code == "SYMBOL_HALTED":
             self.halts.on_reject(message)
@@ -566,9 +844,17 @@ class MyTrader(Trader):
                 f[3] -= take
                 f[0] = min(f[0], now + FILL_SETTLE_TICKS)
                 left -= take
+        ft = self._flash.get(symbol)
         if symbol in self.signal.plans:           # a plan's base includes any probe shares
             self.signal.on_fill(symbol, side, quantity, price)
             self._save_state()
+        elif ft is not None:
+            ft.on_fill(side, quantity, price)
+            row = getattr(ft, "row", {})
+            if side == ft.side:
+                row["filled"] = row.get("filled", 0) + quantity
+            logger.info("FLASH %s fill: %s %d @ %.2f (fair %.2f, now holding %+d)",
+                        symbol, side, quantity, price, ft.fair, ft.held)
         elif self._probe is not None and self._probe.symbol == symbol and self._probe.phase != "done":
             self._probe.on_fill(side, quantity, now)
 
@@ -578,7 +864,15 @@ class MyTrader(Trader):
         self.clock.note(data.get("tick"))
         for sym in self.halts.on_event(event, data):
             self._on_resumed(sym)
-        if event == "FEE_SCHEDULE" and isinstance(data.get("taker"), (int, float)):
+        if event == "FLASH":
+            self._on_flash(data)
+        elif event == "WEEK_CHANGED":            # the graded block starts: count it alone
+            self._stats_at = 0.0
+            self.maybe_log_stats()
+            self.msgs_sent = self.rate_limited = 0
+            self.flash_log = []
+            logger.info("WEEK → %s: quota and flash counters reset", data.get("week"))
+        elif event == "FEE_SCHEDULE" and isinstance(data.get("taker"), (int, float)):
             self.signal.set_fee(float(data["taker"]))
         elif event == "CALENDAR_EVENT" and isinstance(data.get("pct"), (int, float)):
             for sym in data.get("affected") or []:
@@ -627,7 +921,10 @@ class _WireTap:
         return self._tap()
 
     async def _tap(self) -> AsyncIterator[str]:
+        hot = self._bot._owner.hot
+        clock = time.perf_counter
         async for raw in self._ws:
+            t0 = clock()
             if '"order_ack"' in raw:
                 try:
                     self._bot.on_ack(raw)
@@ -640,7 +937,8 @@ class _WireTap:
                         self._bot._owner.on_reject(msg.get("code"), msg.get("message"))
                 except Exception:
                     logger.exception("ignoring unreadable error")
-            yield raw
+            yield raw                             # listen() handles it before we resume
+            hot.record(clock() - t0)
 
 
 class TakerBot(_AdaptedTraderBot):
@@ -652,6 +950,8 @@ class TakerBot(_AdaptedTraderBot):
         owner.portfolio = self.portfolio
         self._in_session = False
         self._portfolio_synced = False
+        self._sent_at: deque[float] = deque()     # monotonic send times, last ~1 s
+        self._acting = False
 
     async def connect(self) -> None:
         """Connect, tap the socket, and track whether the portfolio is synced."""
@@ -680,8 +980,18 @@ class TakerBot(_AdaptedTraderBot):
 
         def update_book_and_mark(snapshot: BookSnapshot) -> None:
             update_book(snapshot)
-            self._owner.on_book(snapshot.symbol, snapshot.ref_price)
+            owner = self._owner
+            owner.on_book(snapshot.symbol, snapshot.ref_price)
+            # A fresh book in a symbol we are fading: decide now, not at the
+            # next 0.5 s tick (the flash is over in ~2 s).
+            if snapshot.symbol in owner._flash and not self._acting and self._session_open:
+                self._acting = True
+                asyncio.get_running_loop().create_task(self._act_now())
         value.update_book = update_book_and_mark
+        # The stock MarketData re-slices a 500-trade list on every trade
+        # message (O(n) per message); a bounded deque appends in O(1).
+        value._recent_trades = deque(maxlen=500)
+        value.update_trade = value._recent_trades.append
         self._market = value
 
     def on_ack(self, raw: str) -> None:
@@ -702,7 +1012,7 @@ class TakerBot(_AdaptedTraderBot):
             owner.on_open(msg.data or {})
         # React to a print now instead of at the next tick: stale quotes go to
         # whoever is fastest.
-        if msg.event in ("CALENDAR_EVENT", "SHOCK") and self._session_open:
+        if msg.event in ("CALENDAR_EVENT", "SHOCK", "FLASH") and self._session_open:
             await self._act_now()
 
     async def _act_now(self) -> None:
@@ -712,6 +1022,8 @@ class TakerBot(_AdaptedTraderBot):
                 await self._place_order(signal)
         except Exception:
             logger.exception("on_tick raised on an event — waiting for the next tick")
+        finally:
+            self._acting = False
 
     def _on_leaderboard(self, msg: Leaderboard) -> None:
         if self._in_session and not self._session_open:
@@ -719,6 +1031,7 @@ class TakerBot(_AdaptedTraderBot):
             logger.info("Session still live after reconnect — trading gate reopened")
         super()._on_leaderboard(msg)
         self._owner.on_leaderboard(msg)
+        self._owner.maybe_log_stats()
         if self._portfolio_synced:
             return
         for entry in msg.traders:
@@ -761,10 +1074,22 @@ class TakerBot(_AdaptedTraderBot):
         # here. A send that raises is dropped, not propagated: trading_loop
         # would die while the listener kept the bot "connected" but idle. If
         # the socket is gone, listen() ends too and run() reconnects both.
-        signal = self._owner.gate(signal, self.market, self.portfolio)
+        owner = self._owner
+        urgent = owner.is_urgent(signal.symbol)
+        now = time.monotonic()
+        while self._sent_at and now - self._sent_at[0] > 1.05:
+            self._sent_at.popleft()
+        cap = TRADER_FLASH_BURST if urgent else TRADER_MSGS_PER_SEC
+        if len(self._sent_at) >= cap or (owner.quota_backoff() and not urgent):
+            logger.info("Quota: holding %s %d %s (%d sent in the last second)",
+                        signal.side, signal.quantity, signal.symbol, len(self._sent_at))
+            owner.order_held(signal.symbol)
+            return
+        signal = owner.gate(signal, self.market, self.portfolio)
         if signal is None:
             return
-        self._owner.note_sent(signal)
+        self._sent_at.append(now)
+        owner.note_sent(signal)
         try:
             await self._send(PlaceOrder(team_id=self._owner.team_id,
                                         symbol=signal.symbol, side=signal.side,

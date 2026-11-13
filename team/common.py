@@ -5,6 +5,9 @@ TickClock       the exchange's logical clock; every timer in the bots runs on it
 HaltTracker     which symbols are halted, from events, rejects and timeouts
 leaderboard     short interest and team positions across the seats it lists
 single_instance one process per seat on this machine
+RollingStats    O(1) rolling mean/std (the hot path never rescans history)
+PriceTrack      price deque with rolling return vol and jump detection
+HotPathMeter    per-message handling time, O(1) histogram
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from typing import IO, TYPE_CHECKING
 if TYPE_CHECKING:
     from shared.messages import Leaderboard
 import time
+from collections import deque
 from collections.abc import Callable, Iterable
 
 logger = logging.getLogger(__name__)
@@ -162,6 +166,140 @@ def single_instance(seat: str) -> IO:
     except BlockingIOError:
         sys.exit(f"{seat} is already running on this machine — not starting a second copy")
     return handle
+
+
+class RollingStats:
+    """Mean and standard deviation of the last `window` values, O(1) per push.
+
+    Keeps running sums instead of rescanning the window (Lab 6, step 4). The
+    sums are rebuilt from the window every RESYNC pushes so float drift can't
+    accumulate over a long session.
+    """
+
+    RESYNC = 10_000
+
+    def __init__(self, window: int) -> None:
+        self._q: deque[float] = deque(maxlen=window)
+        self._sum = 0.0
+        self._sumsq = 0.0
+        self._pushes = 0
+
+    def push(self, x: float) -> None:
+        """Add one value, dropping the oldest once the window is full."""
+        q = self._q
+        if len(q) == q.maxlen:
+            old = q[0]
+            self._sum -= old
+            self._sumsq -= old * old
+        q.append(x)
+        self._sum += x
+        self._sumsq += x * x
+        self._pushes += 1
+        if self._pushes % self.RESYNC == 0:
+            self._sum = sum(q)
+            self._sumsq = sum(v * v for v in q)
+
+    @property
+    def n(self) -> int:
+        return len(self._q)
+
+    def mean(self) -> float:
+        return self._sum / len(self._q) if self._q else 0.0
+
+    def std(self) -> float:
+        n = len(self._q)
+        if n == 0:
+            return 0.0
+        m = self._sum / n
+        return max(0.0, self._sumsq / n - m * m) ** 0.5
+
+
+class PriceTrack(deque):
+    """A price history (a deque, so existing readers still work) that also
+    keeps rolling return statistics and spots jumps, O(1) per append.
+
+    returns       RollingStats of snapshot-to-snapshot returns, jumps excluded
+                  (a flash reverts within ~2 s; letting it into the vol window
+                  would blow every width out for the next `window` snapshots)
+    last_jump     monotonic time of the last return of at least `jump_pct`
+    interval      EWMA of the seconds between appends (0.2 s in week 7)
+    """
+
+    def __init__(self, maxlen: int = 100, window: int = 30, jump_pct: float = 0.01,
+                 now: Callable[[], float] = time.monotonic) -> None:
+        super().__init__(maxlen=maxlen)
+        self.returns = RollingStats(window)
+        self.jump_pct = jump_pct
+        self.last_jump = float("-inf")
+        self.interval: float | None = None
+        self._now = now
+        self._at: float | None = None
+
+    def append(self, x: float) -> None:
+        t = self._now()
+        if self and x > 0 and self[-1] > 0:
+            r = x / self[-1] - 1.0
+            if abs(r) >= self.jump_pct:
+                self.last_jump = t
+            else:
+                self.returns.push(r)
+        if self._at is not None:
+            dt = t - self._at
+            if dt > 0:
+                self.interval = dt if self.interval is None else self.interval + 0.1 * (dt - self.interval)
+        self._at = t
+        super().append(x)
+
+    def vol(self, horizon_sec: float) -> float | None:
+        """Std of returns scaled to `horizon_sec`, or None with too few samples."""
+        if self.returns.n < 5 or not self.interval:
+            return None
+        return self.returns.std() * (horizon_sec / self.interval) ** 0.5
+
+
+class HotPathMeter:
+    """Time spent handling each inbound message, in a fixed log-scale
+    histogram: O(1) per sample, percentiles at report time (Lab 6, step 5)."""
+
+    BOUNDS_US = (5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 50_000)
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        self._counts = [0] * (len(self.BOUNDS_US) + 1)
+        self.n = 0
+        self.max_us = 0.0
+        self.total_us = 0.0
+        self.since = time.monotonic()
+
+    def record(self, seconds: float) -> None:
+        us = seconds * 1e6
+        i = 0
+        for b in self.BOUNDS_US:      # 12 fixed buckets: constant time
+            if us <= b:
+                break
+            i += 1
+        self._counts[i] += 1
+        self.n += 1
+        self.total_us += us
+        self.max_us = max(self.max_us, us)
+
+    def pct(self, q: float) -> float:
+        """Upper bound (µs) of the bucket holding the q-quantile."""
+        if not self.n:
+            return 0.0
+        need, run = q * self.n, 0
+        for i, c in enumerate(self._counts):
+            run += c
+            if run >= need:
+                return float(self.BOUNDS_US[i]) if i < len(self.BOUNDS_US) else self.max_us
+        return self.max_us
+
+    def report(self) -> str:
+        secs = max(1e-9, time.monotonic() - self.since)
+        return (f"{self.n} msgs ({self.n / secs:.0f}/s), per-message handling "
+                f"p50≤{self.pct(0.5):.0f}µs p99≤{self.pct(0.99):.0f}µs max={self.max_us:.0f}µs")
 
 
 def capital_baseline(net_worth: float, registered: float | None) -> float:
