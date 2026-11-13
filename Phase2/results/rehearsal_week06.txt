@@ -1,0 +1,37 @@
+week 6  limit 1000  ticks (15, 243)
+
+PART A
+  forced liquidation of our seats: none
+  peak team position per symbol (limit 1000): [('VLTA', 811), ('MSFT', 475), ('INTC', 449), ('AAPL', 249), ('META', 174)] -> within limit
+  halts: 4, resumes: 4
+    AMD    resumed t95: our first activity 5 ticks later
+    INTC   resumed t95: our first activity 1 ticks later
+    INTC   resumed t125: our first activity 1 ticks later
+    INTC   resumed t182: our first activity 36 ticks later
+  IPO events: ['IPO_ANNOUNCE', 'IPO_OPEN', 'IPO_PRICED', 'IPO_LISTED']
+  IPO bids in the recording: not recorded (see the logs below)
+  uptime in leaderboards: {'stt_11_trader_1': 1.0, 'stt_11_trader_2': 0.991304347826087, 'stt_11_broker_1': 1.0}
+  log stt_11_broker_1: starts=1 reconnects=0 gate_blocks=0 rejects={'ORDER_NOT_FOUND': 26}
+  log stt_11_trader_1: starts=1 reconnects=0 gate_blocks=0 rejects={'SYMBOL_HALTED': 2}
+      10:39:43  INFO      IPO VLTA: bidding 400 at 34.00
+      10:39:43  INFO      IPO indication confirmed: indication recorded: 400 VLTA up to $34.00
+  log stt_11_trader_2: starts=2 reconnects=0 gate_blocks=0 rejects={'SYMBOL_HALTED': 2}
+      10:39:43  INFO      IPO VLTA: bidding 400 at 34.00
+      10:39:43  INFO      IPO indication confirmed: indication recorded: 400 VLTA up to $34.00
+
+PART B: prints
+  t55 INTC    -6.39%  fills  58  open    +0  pnl     +6.22  fees   30.94
+  t125 MSFT    -3.20%  fills  56  open    +0  pnl  +4242.63  fees  594.14
+  t185 AAPL    +1.65%  fills  26  open    +0  pnl   +312.87  fees  128.43
+  t185 MSFT    +1.65%  fills  14  open    +0  pnl   +531.32  fees  151.68
+  t185 NVDA    +1.65%  fills  10  open    +0  pnl    +61.99  fees   26.81
+  t185 TSLA    +1.65%  fills  13  open    +0  pnl   +376.31  fees  103.69
+  t185 AMZN    +1.65%  fills   6  open    +0  pnl    -76.27  fees   33.37
+  t185 GOOGL   +1.65%  fills  13  open    +0  pnl   -214.92  fees   59.42
+  t185 META    +1.65%  fills  17  open    +0  pnl   -277.97  fees  190.75
+  t185 NFLX    +1.65%  fills  11  open    +0  pnl   +255.27  fees   91.21
+  t185 AMD     +1.65%  fills   5  open    +0  pnl    +12.43  fees    2.52
+  t185 VLTA    +1.65%  fills   7  open    +0  pnl     +3.16  fees    0.92
+  live realized on prints: +5233.04 (fees 1413.88)
+  seats' own plan ledger: 21 plans, +5229.63
+  tape replay on this recording: {'latency_0': 2374.24, 'latency_1': 1724.35, 'latency_2': 1595.95, 'latency_3': 964.28}

@@ -18,18 +18,21 @@ import logging
 import re
 import time
 from collections import deque
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from collections.abc import AsyncIterator, Iterable
+from typing import TYPE_CHECKING, Any
 
 import broker.config as _broker_config
 from shared.messages import CancelOrder, PlaceOrder
 
 from arena import Broker
 from arena.broker import _AdaptedBrokerBot
+from team.common import HaltTracker, TickClock, capital_baseline, short_interest, single_instance
 from team.config import CAPITAL
 
+if TYPE_CHECKING:
+    from shared.messages import Leaderboard, OrderAck, PortfolioUpdate, SessionEvent, TradeExecution
+
 logger = logging.getLogger(__name__)
-_CHICAGO = ZoneInfo("America/Chicago")
 
 # The venue allows 20 order/cancel messages per exchange tick (1 s), metered
 # per TEAM — the trader seats share it — with a burst allowance of 3× that
@@ -43,8 +46,8 @@ _CHICAGO = ZoneInfo("America/Chicago")
 MESSAGE_BUDGET = 14
 TRADER_RESERVE = 5
 
-# Pricing. In the headless simulator at live fees (30 bps taker, 5 bps
-# rebate), a 30 bps minimum width plus inventory skew beat the default
+# Pricing. In the headless simulator at the fees of the time (30 bps taker,
+# 5 bps rebate; the venue now charges 40/0, see /api/venues), a 30 bps minimum width plus inventory skew beat the default
 # quoting on every one of 5 seeds: wider quotes get picked off less, and the
 # skew sheds inventory before a trend turns it into a loss. Replayed on 30
 # minutes of the real public order book, reaching full skew at 100 shares
@@ -69,7 +72,6 @@ MAX_INVENTORY = 100   # shares at which the skew reaches a full half-spread
 #   dividend   pull the symbol's quotes across the ex-dividend price drop
 SKIP_SYMBOLS: set[str] = set()      # never quoted (keep in sync with team/trader.py)
 SHOCK_PAUSE_SEC = 30                # pull quotes this long after an unscheduled SHOCK
-EXCHANGE_TICK_SEC = 1.0
 EVENT_PRE_TICKS = 20
 EVENT_FLATTEN_TICKS = 8             # room for a retry after the cancel grace (3 s)
 FLATTEN_RETRY_SEC = 1.5
@@ -125,7 +127,7 @@ OWN_TEAM_PREFIX = "stt_11_"         # our own seats are never toxic
 #                     trades around both numbers
 #   INSUFFICIENT_CASH open bid notional + this bid ≤ CASH_USE × cash
 #   UNKNOWN_SYMBOL    only symbols the venue has sent a book for
-#   SESSION_CLOSED    no orders in QUIET_WINDOWS around the scheduled closes
+#   AUCTION_ONLY...   no orders from SESSION_PRECLOSE until the next open
 BROKER_MAX_SHARES = 150             # keep in sync with team/trader.py
 BROKER_MAX_SHORT = 150              # keep in sync with team/trader.py
 SHORT_LOCATE_CAP = 2000             # replaced at SESSION_OPEN from the scenario
@@ -135,11 +137,6 @@ SHORT_REJECTS = ("SHORTS_LOCKED", "SSR_RESTRICTED", "BORROW_UNAVAILABLE")
 CASH_USE = 0.85                     # bid with at most this share of cash
 CANCEL_GRACE_SEC = 3.0              # a cancelled order may still report fills this long
 ACK_TIMEOUT_SEC = 5.0               # an order never acked was never live
-# Chicago wall-clock windows with no new orders: the block's scheduled
-# closes (open play → week 3 at 15:30, week 3 → open play at 16:30). An order
-# in flight when SESSION_CLOSED lands is rejected.
-QUIET_WINDOWS = (("15:29:45", "15:30:20"), ("16:29:45", "16:30:20"),
-                 ("16:59:45", "17:00:20"), ("17:59:45", "18:00:20"))   # week 5 block
 
 # ── Halts and liquidation (week 5+) ──────────────────────────────────────
 # A halted symbol's quotes stay on the book, frozen at the pre-halt price,
@@ -151,43 +148,25 @@ QUIET_WINDOWS = (("15:29:45", "15:30:20"), ("16:29:45", "16:30:20"),
 # Below RISK_OFF_MARGIN above the maintenance line (net worth from the
 # leaderboard) the caps drop to zero: we only quote the side that shrinks
 # inventory, well before the venue would force-liquidate us.
-HALT_FALLBACK_SEC = 300             # halt length to assume if the event didn't say
-HALT_SLACK_SEC = 5                  # past that, assume we missed TRADING_RESUMED
 RESUME_SETTLE_SEC = 5
-MAINTENANCE_FRACTION = 0.5          # week 5; replaced at SESSION_OPEN from the scenario
+MAINTENANCE_FRACTION = 0.4          # replaced at SESSION_OPEN from the scenario
 RISK_OFF_MARGIN = 0.20
-
-
-def _in_quiet_window(now: datetime | None = None) -> bool:
-    t = (now or datetime.now(_CHICAGO)).strftime("%H:%M:%S")
-    return any(lo <= t <= hi for lo, hi in QUIET_WINDOWS)
-
-
-def short_interest(leaderboard) -> dict[str, int]:
-    """Shares short per symbol across every seat on the leaderboard — what
-    the venue's borrow cap is measured against."""
-    out: dict[str, int] = {}
-    for entry in list(leaderboard.traders or []) + list(leaderboard.brokers or []):
-        for sym, qty in (entry.get("positions") or {}).items():
-            if qty < 0:
-                out[sym] = out.get(sym, 0) - int(qty)
-    return out
 
 
 class _RejectTap:
     """Wraps the websocket so the bot sees rejects (ErrorMsg), which the
     stock bot only logs."""
 
-    def __init__(self, ws, bot):
+    def __init__(self, ws: Any, bot: BudgetedBrokerBot) -> None:
         self._ws, self._bot = ws, bot
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(self._ws, name)
 
-    def __aiter__(self):
+    def __aiter__(self) -> AsyncIterator[str]:
         return self._tap()
 
-    async def _tap(self):
+    async def _tap(self) -> AsyncIterator[str]:
         async for raw in self._ws:
             if '"error"' in raw:
                 try:
@@ -208,7 +187,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
     waits for the next pass, 0.5s later.
     """
 
-    def __init__(self, owner, exchange_url=None):
+    def __init__(self, owner: MyBroker, exchange_url: str | None = None) -> None:
         super().__init__(owner, exchange_url)
         self._sent = deque()                    # send times, for the quota
         self._orders: dict[int, dict] = {}      # our orders that may still fill
@@ -226,32 +205,20 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         self._no_short_until: dict[str, float] = {}
         self._short_interest: dict[str, int] = {}
         self._budget = MESSAGE_BUDGET
-        self._tick_ref: tuple[int, float] | None = None   # (exchange tick, monotonic) last seen
+        self._clock = TickClock()
         self._events: dict[tuple, dict] = {}    # (kind, symbol, tick) -> public event
         self._flatten_retry: dict[str, float] = {}   # symbol -> next flatten attempt
         self._markouts_due: deque = deque()     # passive fills awaiting their markout
-        self._halted: dict[str, float] = {}     # symbol -> expected resume (monotonic)
-        self._market_halt_until = 0.0
+        self._halts = HaltTracker(self._clock)
+        self._closing = False                   # SESSION_PRECLOSE until the next open
         self._maint = MAINTENANCE_FRACTION
         self._start_equity: float | None = None   # set from the first leaderboard
         self._risk_off = False
 
     # ── Event schedule ──────────────────────────────────────────────────
-    def _note_tick(self, tick) -> None:
-        if isinstance(tick, (int, float)):
-            self._tick_ref = (int(tick), time.monotonic())
-
-    def _tick(self) -> float | None:
-        if self._tick_ref is None:
-            return None
-        tick, at = self._tick_ref
-        return tick + (time.monotonic() - at) / EXCHANGE_TICK_SEC
-
-    def _event_phase(self, sym):
+    def _event_phase(self, sym: str) -> tuple[str | None, dict | None]:
         """("out" | "reduce" | None, the earnings event to flatten for)."""
-        now = self._tick()
-        if now is None:
-            return None, None
+        now = self._clock.now()
         phase, flatten = None, None
         for (kind, esym, etick), ev in self._events.items():
             d = etick - now                       # ticks until the event
@@ -269,26 +236,12 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         return phase, flatten
 
     # ── Halts ───────────────────────────────────────────────────────────
-    def _is_halted(self, sym) -> bool:
-        now = time.monotonic()
-        if now < self._market_halt_until:
-            return True
-        until = self._halted.get(sym)
-        if until is None:
-            return False
-        if now < until + HALT_SLACK_SEC:
-            return True
-        logger.warning("No TRADING_RESUMED for %s — assuming it reopened", sym)
-        self._resume(sym)
-        return False
-
-    def _resume(self, sym) -> None:
-        self._halted.pop(sym, None)
+    def _resume(self, sym: str) -> None:
         self._paused[sym] = time.monotonic() + RESUME_SETTLE_SEC
         self.state.last_quote_prices.pop(sym, None)   # requote from scratch
         logger.info("RESUMED %s — quoting again in %ds", sym, RESUME_SETTLE_SEC)
 
-    def _caps(self, sym):
+    def _caps(self, sym: str) -> tuple[int, int]:
         """(most shares long, most shares short) this symbol may reach."""
         if self._risk_off:
             return 0, 0                           # near liquidation: only shrink
@@ -302,7 +255,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         for sym in list(self._quote_symbols):
             phase, ev = self._event_phase(sym)
             pos = self.state.positions.get(sym, 0)
-            if ev is None or not pos or ev["tick"] < (self._tick() or 0):
+            if ev is None or not pos or ev["tick"] < self._clock.now():
                 continue                          # nothing to do, or the print already hit
             centre = self.quote_centre(sym)
             # Retry until flat: the guard may shrink the first IOC while the
@@ -336,14 +289,14 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                             sum(self._owner._markouts[cpty]) / len(self._owner._markouts[cpty]),
                             len(self._owner._markouts[cpty]))
 
-    def _may_short(self, sym) -> bool:
+    def _may_short(self, sym: str) -> bool:
         return (self._shorts_ok and sym not in self._ssr
                 and time.monotonic() >= self._no_short_until.get(sym, 0.0)
                 and self._short_interest.get(sym, 0) + BROKER_MAX_SHORT + BORROW_HEADROOM
                 <= self._locate_cap)
 
     # ── The ledger ──────────────────────────────────────────────────────
-    def _live(self):
+    def _live(self) -> Iterable[dict]:
         """Orders that may still fill. Drops filled orders once their ack is
         matched (kept until then so the ack can't land on the wrong order),
         cancelled orders past their grace period, and orders never acked."""
@@ -357,18 +310,18 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                     self._by_oid.pop(o["oid"], None)
         return self._orders.values()
 
-    def _open(self, symbol, side):
+    def _open(self, symbol: str, side: str) -> int:
         return sum(o["rem"] for o in self._live()
                    if o["sym"] == symbol and o["side"] == side)
 
-    def _open_bid_cash(self):
+    def _open_bid_cash(self) -> float:
         return sum(o["rem"] * o["px"] for o in self._live() if o["side"] == "buy")
 
     def _guard(self, msg: PlaceOrder) -> PlaceOrder | None:
         """Shrink or drop an order so no venue check can reject it."""
         sym, qty = msg.symbol, msg.quantity
-        if (not self._session_open or _in_quiet_window()
-                or sym not in self.state.exchange_prices or self._is_halted(sym)
+        if (not self._session_open or self._closing
+                or sym not in self.state.exchange_prices or self._halts.is_halted(sym)
                 or sym in self._skip or time.monotonic() < self._paused.get(sym, 0)):
             return None
         pos = self.state.positions.get(sym, 0)
@@ -396,7 +349,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             return None
         return msg if qty == msg.quantity else msg.model_copy(update={"quantity": qty})
 
-    async def _send(self, msg):
+    async def _send(self, msg: Any) -> None:
         if isinstance(msg, PlaceOrder):
             msg = self._guard(msg)
             if msg is None:
@@ -419,7 +372,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         self._sent.append(time.monotonic())
         await super()._send(msg)
 
-    def _on_order_ack(self, msg) -> None:
+    def _on_order_ack(self, msg: OrderAck) -> None:
         super()._on_order_ack(msg)
         if msg.team_id != _broker_config.TEAM_ID:
             return
@@ -434,7 +387,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             if self._orders[k]["rem"] <= 0 and self._orders[k].get("sure"):
                 self._filled_oids.add(msg.order_id)
 
-    def _on_trade(self, msg) -> None:
+    def _on_trade(self, msg: TradeExecution) -> None:
         super()._on_trade(msg)
         me = _broker_config.TEAM_ID
         side = "buy" if msg.buyer_id == me else "sell" if msg.seller_id == me else None
@@ -470,15 +423,16 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             if match[0]["oid"]:
                 self._filled_oids.add(match[0]["oid"])
 
-    def _on_portfolio(self, msg) -> None:
+    def _on_portfolio(self, msg: PortfolioUpdate) -> None:
         super()._on_portfolio(msg)
         self._cash_est = msg.cash
 
     async def connect_to_exchange(self) -> None:
+        """Connect, then tap the socket for rejects."""
         await super().connect_to_exchange()
         self._ws = _RejectTap(self._ws, self)
 
-    def _on_reject(self, code, message) -> None:
+    def _on_reject(self, code: str | None, message: str | None) -> None:
         if code == "RATE_LIMITED":
             m = re.search(r"send (\d+)", message or "")
             if m:
@@ -486,10 +440,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             logger.warning("RATE_LIMITED: %s — budget now %d/s", message, self._budget)
             return
         if code == "SYMBOL_HALTED":             # a halt we never heard about (reconnect)
-            m = re.match(r"(\S+) trading is halted\. Resume in (\d+)s", message or "")
-            if m and m.group(1) not in self._halted:
-                self._halted[m.group(1)] = time.monotonic() + int(m.group(2))
-                logger.warning("%s is halted (from a reject) — standing aside", m.group(1))
+            self._halts.on_reject(message)
             return
         if code not in SHORT_REJECTS:
             return
@@ -505,19 +456,15 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             for s in [sym] if sym else self._quote_symbols:
                 self._no_short_until[s] = until
 
-    def _on_leaderboard(self, msg) -> None:
+    def _on_leaderboard(self, msg: Leaderboard) -> None:
         super()._on_leaderboard(msg)
         self._short_interest = short_interest(msg)
-        self._note_tick(getattr(msg, "tick", None))
+        self._clock.note(getattr(msg, "tick", None))
         me = next((e for e in msg.brokers if e.get("team_id") == _broker_config.TEAM_ID), None)
         if me and "net_worth" in me:
             if self._start_equity is None:
-                # The venue liquidates below maintenance × the seat's capital;
-                # the leaderboard doesn't carry it, so take the registered
-                # allocation, or what we see now if that is lower (a local
-                # venue, or a seat that lost money in an earlier session).
-                self._start_equity = min(float(me["net_worth"]), float(
-                    CAPITAL.get(_broker_config.TEAM_ID, me["net_worth"])))
+                self._start_equity = capital_baseline(float(me["net_worth"]),
+                                                      CAPITAL.get(_broker_config.TEAM_ID))
             risk_off = float(me["net_worth"]) < self._start_equity * (self._maint + RISK_OFF_MARGIN)
             if risk_off != self._risk_off:
                 logger.warning("RISK %s: net worth %.0f vs reduce-only line %.0f "
@@ -543,16 +490,20 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 break
 
     async def flatten_all(self) -> None:
+        """Pull the quotes at the close instead of selling into a closed venue."""
         # The stock bot sells everything at market on SESSION_CLOSED, after
         # the venue has closed: every one of those orders is rejected. Just
         # pull the quotes (cancels are never rejected for a closed session).
         await self.cancel_all_quotes()
 
-    async def _on_session_event(self, msg) -> None:
+    async def _on_session_event(self, msg: SessionEvent) -> None:
         await super()._on_session_event(msg)
         data = msg.data or {}
-        self._note_tick(data.get("tick"))
+        self._clock.note(data.get("tick"))
+        for sym in self._halts.on_event(msg.event, data):
+            self._resume(sym)
         if msg.event == "SESSION_OPEN":
+            self._closing = False
             sc = data.get("scenario") or {}
             self._shorts_ok = bool((sc.get("flags") or {}).get("shorts_allowed", False))
             self._locate_cap = int((sc.get("config") or {}).get("SHORT_LOCATE_CAP",
@@ -564,8 +515,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             if not data.get("late_join"):       # SSR is sticky until the next open
                 self._ssr.clear()
                 self._events.clear()
-                self._halted.clear()
-                self._market_halt_until = 0.0
+                self._halts.clear()
                 self._start_equity = None
             logger.info("Session rules: shorts=%s (up to %d per symbol), locate cap %d, "
                         "venue quota %s/tick → broker budget %d/s",
@@ -574,21 +524,15 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         elif msg.event == "SSR_ON" and data.get("symbol"):
             self._ssr.add(data["symbol"])
         elif msg.event == "TRADING_HALT" and data.get("symbol"):
-            sym = data["symbol"]
-            self._halted[sym] = time.monotonic() + float(data.get("duration") or HALT_FALLBACK_SEC)
-            logger.warning("HALT %s — pulling its quotes until TRADING_RESUMED", sym)
-            await self.cancel_quotes(sym)
-        elif msg.event == "TRADING_RESUMED" and data.get("symbol"):
-            self._resume(data["symbol"])
-        elif msg.event == "MARKET_HALT":
-            self._market_halt_until = time.monotonic() + float(
-                data.get("duration") or 3 * HALT_FALLBACK_SEC)
-            logger.warning("MARKET HALT — pulling every quote")
+            await self.cancel_quotes(data["symbol"])
+        elif msg.event in ("MARKET_HALT", "SESSION_PRECLOSE"):
+            # A closing cross fills whatever rests in it at one price set by
+            # the imbalance. We are a continuous-market quoter: stand aside.
+            self._closing = self._closing or msg.event == "SESSION_PRECLOSE"
+            logger.warning("%s — pulling every quote", msg.event)
             await self.cancel_all_quotes()
-        elif msg.event == "MARKET_RESUMED":
-            self._market_halt_until = 0.0
-            for sym in list(self._quote_symbols):
-                self._resume(sym)
+        elif msg.event == "SESSION_PREOPEN":
+            self._closing = False
         elif msg.event == "CALENDAR":
             for ev in data.get("events", []) + data.get("imminent", []):
                 key = (ev.get("kind"), ev.get("symbol"), ev.get("tick"))
@@ -607,7 +551,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             logger.info("Pulling quotes for %ss: %s", SHOCK_PAUSE_SEC, ", ".join(syms))
 
     # ── Requoting under the budget ──────────────────────────────────────
-    def _room(self):
+    def _room(self) -> int:
         """Messages we may still send without exceeding the per-second quota."""
         now = time.monotonic()
         while self._sent and now - self._sent[0] > 1.05:
@@ -634,19 +578,21 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
 
     def _blocked_symbol(self, sym: str) -> bool:
         return (sym in self._skip or time.monotonic() < self._paused.get(sym, 0)
-                or self._is_halted(sym) or self._event_phase(sym)[0] == "out")
+                or self._halts.is_halted(sym) or self._event_phase(sym)[0] == "out")
 
     async def requote_loop(self) -> None:
+        """Requote what moved most, inside the message budget, every pass."""
         while True:
             await asyncio.sleep(_broker_config.REQUOTE_INTERVAL_SEC)
-            if not self._session_open:
+            if not self._session_open or self._closing:
                 continue
+            for sym in self._halts.expired():
+                self._resume(sym)
             self._mark_out()
             # Shrink-only quoting before a print: skew the reducing side to the centre.
             self._owner._reducing = {s for s in self._quote_symbols
                                      if self._risk_off or self._event_phase(s)[0] == "reduce"}
-            if not _in_quiet_window():
-                await self._flatten_for_events()
+            await self._flatten_for_events()
             budget = self._room()
 
             # Pull whatever is resting in a symbol we've stopped quoting.
@@ -656,9 +602,6 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                     if cost <= budget:
                         budget -= cost
                         await self.cancel_quotes(sym)
-            if _in_quiet_window():
-                continue
-
             due = []
             for sym in list(self._quote_symbols):
                 if self._blocked_symbol(sym):
@@ -682,7 +625,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
 class MyBroker(Broker):
     """Your market-making logic. An empty subclass already quotes."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._half_spread = {}                    # symbol -> last half-width ($)
         # Written by BudgetedBrokerBot (shared across venues):
@@ -691,7 +634,8 @@ class MyBroker(Broker):
         self._markouts: dict[str, deque] = {}        # counterparty -> recent markouts (bps)
         self._reducing: set[str] = set()             # symbols with a print coming
 
-    def spread(self, symbol, price, history):
+    def spread(self, symbol: str, price: float | None, history: list[float]) -> float | None:
+        """Dollar width: the floor, or volatility, widened for listings and toxic flow."""
         # `history` is the recent reference prices, oldest first.
         # Return the dollar width, or None for the fixed default.
         if not price:
@@ -699,7 +643,7 @@ class MyBroker(Broker):
         width = max(min(0.30, price * 25 / 1e4),  # the default width
                     price * MIN_SPREAD_BPS / 1e4)
         h = history[-(VOL_WINDOW + 1):]
-        rets = [b / a - 1 for a, b in zip(h, h[1:]) if a > 0]
+        rets = [b / a - 1 for a, b in zip(h, h[1:], strict=False) if a > 0]
         if len(rets) >= VOL_WINDOW // 2:
             mean = sum(rets) / len(rets)
             vol = (sum((r - mean) ** 2 for r in rets) / len(rets)) ** 0.5
@@ -713,7 +657,8 @@ class MyBroker(Broker):
         self._half_spread[symbol] = width / 2
         return width
 
-    def skew(self, symbol, inventory):
+    def skew(self, symbol: str, inventory: int) -> float | None:
+        """Shift both quotes against inventory (see the comment below)."""
         # Shift both quotes against our inventory: long → quote lower so our
         # offer gets lifted first. At MAX_INVENTORY the shift is a full
         # half-spread, which puts the reducing side at the mid. With a print
@@ -726,7 +671,8 @@ class MyBroker(Broker):
         ratio = max(-1.0, min(1.0, inventory / MAX_INVENTORY))
         return -ratio * half
 
-    def toxic(self, trader_id):
+    def toxic(self, trader_id: str) -> bool:
+        """True if this counterparty's recent fills mark out badly against us."""
         marks = self._markouts.get(trader_id)
         return (marks is not None and len(marks) >= TOXIC_MIN_FILLS
                 and sum(marks) / len(marks) < TOXIC_MARKOUT_BPS)
@@ -749,4 +695,5 @@ class MyBroker(Broker):
 
 
 if __name__ == "__main__":
+    _lock = single_instance(_broker_config.TEAM_ID)
     MyBroker().run()

@@ -1,0 +1,26 @@
+week 5  limit 800  ticks (1988368, 1990965)
+
+PART A
+  forced liquidation of our seats: none
+  this recording has no leaderboard. Peak team position change from our fills (limit 800, granted shares excluded): [('TSLA', 105), ('NFLX', 88), ('AMD', 34), ('AAPL', 21), ('GOOGL', 10)]
+  halts: 6, resumes: 8
+    AAPL   resumed t1988617: trader fill +3, broker fill +5, ack +None (ticks; None = not in window)
+    NVDA   resumed t1988617: trader fill +18, broker fill +16, ack +None (ticks; None = not in window)
+    NFLX   resumed t1988939: trader fill +0, broker fill +None, ack +None (ticks; None = not in window)
+    AMD    resumed t1989387: trader fill +3, broker fill +None, ack +None (ticks; None = not in window)
+    AMD    resumed t1989680: trader fill +3, broker fill +None, ack +None (ticks; None = not in window)
+    NFLX   resumed t1989723: trader fill +3, broker fill +None, ack +None (ticks; None = not in window)
+    AAPL   resumed t1989750: trader fill +3, broker fill +None, ack +None (ticks; None = not in window)
+    AMD    resumed t1990073: trader fill +4, broker fill +None, ack +None (ticks; None = not in window)
+  IPO events: []
+  IPO bids in the recording: not recorded (see the logs below)
+  uptime in leaderboards: not in this recording
+
+PART B: prints
+  t1988668 NFLX    +7.59%  fills  21  open    +0  pnl   +446.22  fees  638.01
+  t1989118 AMD     -8.33%  fills   2  open    +0  pnl     -4.91  fees    4.86
+  t1989418 AAPL    -3.03%  fills   2  open    +0  pnl     -5.00  fees    4.70
+  t1989418 NFLX    -3.03%  fills   2  open    +0  pnl    -34.42  fees   24.17
+  t1989418 AMD     -3.03%  fills   2  open    +0  pnl     -5.01  fees    4.96
+  live realized on prints: +396.88 (fees 676.70)
+  tape replay on this recording: {'latency_0': 213.11, 'latency_1': 169.87, 'latency_2': -557.83, 'latency_3': -1834.72}
