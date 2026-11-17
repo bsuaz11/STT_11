@@ -1,0 +1,183 @@
+{
+  "python": "3.11.7",
+  "pandas": "2.2.3",
+  "numpy": "1.26.4",
+  "cpus": 8,
+  "start_method": "spawn",
+  "platform": "darwin",
+  "rows": 5000000,
+  "symbols": 500,
+  "bars": 10000,
+  "mem_before": {
+    "(index)": [
+      "int64",
+      0.000132
+    ],
+    "timestamp": [
+      "object",
+      380.0
+    ],
+    "symbol": [
+      "object",
+      320.0
+    ],
+    "open": [
+      "float64",
+      40.0
+    ],
+    "high": [
+      "float64",
+      40.0
+    ],
+    "low": [
+      "float64",
+      40.0
+    ],
+    "close": [
+      "float64",
+      40.0
+    ],
+    "volume": [
+      "int64",
+      40.0
+    ],
+    "TOTAL": [
+      "",
+      900.000132
+    ]
+  },
+  "mem_after": {
+    "(index)": [
+      "datetime64[ns]",
+      40.0
+    ],
+    "symbol": [
+      "category",
+      10.048552
+    ],
+    "open": [
+      "float32",
+      20.0
+    ],
+    "high": [
+      "float32",
+      20.0
+    ],
+    "low": [
+      "float32",
+      20.0
+    ],
+    "close": [
+      "float32",
+      20.0
+    ],
+    "volume": [
+      "int32",
+      20.0
+    ],
+    "TOTAL": [
+      "",
+      150.048552
+    ]
+  },
+  "naive": {
+    "rows": 200000,
+    "valid_rows": 198000,
+    "nan_rows": 2000,
+    "naive_s": 4.39820541604422,
+    "vectorized_s": 0.07319741602987051,
+    "speedup": 60.086894518918456,
+    "max_abs_diff": 0.0,
+    "naive_full_estimate_s": 109.95513540110551
+  },
+  "vectorized_full_s": 2.600469958037138,
+  "csv_mb": 301.974844,
+  "ooc": {
+    "chunksize": 250000,
+    "carry_rows_per_symbol": 100,
+    "inmemory": {
+      "mode": "inmemory",
+      "seconds": 4.6712617500452325,
+      "peak_rss_mb": 781.811712,
+      "baseline_rss_mb": 92.880896
+    },
+    "chunked": {
+      "mode": "chunked",
+      "seconds": 9.328575582941994,
+      "peak_rss_mb": 308.641792,
+      "baseline_rss_mb": 93.011968
+    },
+    "max_abs_diff": 0.0,
+    "bitwise_equal_frac": 1.0
+  },
+  "pickle": {
+    "partitions": 32,
+    "mb": 70.194624,
+    "dumps_s": 0.019711250090040267,
+    "loads_s": 0.027504459023475647,
+    "result_mb_est": 61.446752
+  },
+  "pool": [
+    {
+      "kind": "process",
+      "workers": 1,
+      "startup_s": 0.6433256249409169,
+      "work_s": 1.9403835000703111,
+      "speedup_vs_single": 1.3401835039016299
+    },
+    {
+      "kind": "process",
+      "workers": 2,
+      "startup_s": 0.8487692080205307,
+      "work_s": 1.1383260840084404,
+      "speedup_vs_single": 2.2844683914120485
+    },
+    {
+      "kind": "process",
+      "workers": 4,
+      "startup_s": 1.7850858330028132,
+      "work_s": 1.302730125025846,
+      "speedup_vs_single": 1.9961693585504097
+    },
+    {
+      "kind": "process",
+      "workers": 8,
+      "startup_s": 5.21544191702269,
+      "work_s": 4.246089958003722,
+      "speedup_vs_single": 0.6124387339310484
+    },
+    {
+      "kind": "thread",
+      "workers": 1,
+      "startup_s": 0.019674999942071725,
+      "work_s": 6.331570875016041,
+      "speedup_vs_single": 0.4107148145965514
+    },
+    {
+      "kind": "thread",
+      "workers": 2,
+      "startup_s": 0.005961375031620253,
+      "work_s": 2.311640333966352,
+      "speedup_vs_single": 1.1249457451606268
+    },
+    {
+      "kind": "thread",
+      "workers": 4,
+      "startup_s": 0.012439790950156737,
+      "work_s": 1.7824537500273436,
+      "speedup_vs_single": 1.4589270313449905
+    },
+    {
+      "kind": "thread",
+      "workers": 8,
+      "startup_s": 0.010686457925476123,
+      "work_s": 1.847371416981332,
+      "speedup_vs_single": 1.4076595178063298
+    }
+  ],
+  "spawn": {
+    "workers": 8,
+    "startup_s": 3.7100896249292417,
+    "work_s": 3.0067065830808133
+  }
+}
