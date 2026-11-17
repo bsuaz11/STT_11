@@ -7,9 +7,11 @@ Every seat runs this file; TEAM_ID picks what it does (SEAT_ROLES below).
     probe    a small round trip after the open and after every halt resumes
     ipo      bid in IPO bookbuilds and manage the allocation once it lists
 
-Orders go out as IOC. Whatever a role wants passes through _gate() in
+Orders go out as IOC. Whatever a role wants passes through gate() in
 TakerBot._place_order, the one place orders leave the bot, so a role cannot
-break a hard limit however it is written. Every timer runs on the exchange's
+break a hard limit however it is written. The risk layer (team/risk.py: kill
+switch, session and position stops, notional caps, halt re-entry) runs at the
+top of every tick and inside gate(). Every timer runs on the exchange's
 logical clock (team.common.TickClock), never the wall clock, so the same code
 runs live, in the simulator and at any replay speed.
 
@@ -48,6 +50,7 @@ from team.common import (
     team_positions,
 )
 from team.config import CAPITAL
+from team.risk import TRADER_LIMITS, RiskManager
 
 if TYPE_CHECKING:
     from shared.messages import BookSnapshot, Leaderboard, PortfolioUpdate, SessionEvent
@@ -73,7 +76,7 @@ POSITION_LIMIT = 1000
 POSITION_BUFFER = 20          # stay this far under the limit
 BROKER_MAX_SHARES = 150
 MAX_ORDER_SHARES = 500        # venue rejects anything larger
-MAX_GROSS_LEVERAGE = 1.5      # gross notional ≤ this × net worth
+# Gross and net notional caps live in team/risk.py (TRADER_LIMITS).
 MAINTENANCE_FRACTION = 0.4    # the venue liquidates below this × capital
 RISK_OFF_MARGIN = 0.20        # reduce-only this far above that line
 LULD_BAND_PCT = 0.08
@@ -214,11 +217,16 @@ class MyTrader(Trader):
 
     def __init__(self, clock: TickClock | None = None, roles: set[str] | None = None,
                  team_id: str | None = None, params: GapParams | None = None,
-                 state_path: pathlib.Path | None = None) -> None:
+                 state_path: pathlib.Path | None = None,
+                 kill_dir: pathlib.Path | None = None) -> None:
         super().__init__()
         self.team_id = team_id or _trader_config.TEAM_ID
         self.clock = clock or TickClock()
         self.halts = HaltTracker(self.clock)
+        self.risk = RiskManager(self.team_id, TRADER_LIMITS,
+                                float(CAPITAL.get(self.team_id, _trader_config.STARTING_CASH)),
+                                kill_dir=kill_dir)
+        self._closing_sig: Signal | None = None   # the order a stop or the kill switch wants
         env_roles = os.environ.get("TRADER_ROLES")
         self.roles = roles if roles is not None else (
             {r.strip() for r in env_roles.split(",") if r.strip()} if env_roles
@@ -259,6 +267,7 @@ class MyTrader(Trader):
         # IPO state
         self._ipo: dict[str, dict] = {}           # symbol -> indication awaiting confirmation
         self._listings: dict[str, dict] = {}      # symbol -> {offer, high, t0}
+        self._offer: dict[str, float] = {}        # priced IPO -> offer (its mark until it lists)
         # Flashes
         self._fair: dict[str, float] = {}         # symbol -> EWMA of the mark, jumps excluded
         self._fair_off: dict[str, int] = {}       # symbol -> snapshots in a row far from fair
@@ -285,9 +294,20 @@ class MyTrader(Trader):
                 if mid:
                     self._open_mid[sym] = mid
 
-        self._risk_off = self._equity(market, portfolio) < self._risk_off_level()
+        equity = self._equity(market, portfolio)
+        decision = self.risk.update(self.clock.now(), equity, portfolio.positions,
+                                    self._marks(market, portfolio))
+        if decision.flatten_all:                  # kill switch with flatten
+            return self._reduce_largest(market, portfolio, "KILL SWITCH flatten")
+        if decision.kill:                         # kill switch: send nothing new
+            return None
+        for sym in decision.flatten:              # per-position stop
+            sig = self._close(sym, market, portfolio, "POSITION STOP")
+            if sig is not None:
+                return sig
+        self._risk_off = equity < self._risk_off_level()
         if self._risk_off:
-            return self._reduce_largest(market, portfolio)
+            return self._reduce_largest(market, portfolio, "RISK OFF")
         return (self._flash_order(market, portfolio)
                 or self._signal_order(market, portfolio)
                 or self._listing_exit(market, portfolio)
@@ -480,7 +500,8 @@ class MyTrader(Trader):
 
     # ── Role: probe ─────────────────────────────────────────────────────
     def _on_resumed(self, sym: str) -> None:
-        logger.info("RESUMED %s — trading it again", sym)
+        logger.info("RESUMED %s — re-entering only once the book settles", sym)
+        self.risk.on_resume(sym, self.clock.now())
         if "probe" in self.roles and sym not in SKIP_SYMBOLS and sym not in self._probe_queue:
             self._probe_queue.append(sym)
 
@@ -579,7 +600,10 @@ class MyTrader(Trader):
         return (PROBE_SHARES if "probe" in self.roles else 0), 0
 
     def _mark(self, sym: str, market: MarketData) -> float:
-        return self._ref.get(sym) or market.mid_price(sym) or 0.0
+        """Venue mark, else the mid, else (an IPO allocation before it lists)
+        the offer price, else what we paid. 0.0 only if nothing is known."""
+        return (self._ref.get(sym) or market.mid_price(sym) or self._offer.get(sym)
+                or self.risk.book.entry(sym) or 0.0)
 
     def _equity(self, market: MarketData, portfolio: Portfolio) -> float:
         """Net worth at the venue mark — what the maintenance check uses."""
@@ -592,23 +616,58 @@ class MyTrader(Trader):
             capital = float(CAPITAL.get(self.team_id, _trader_config.STARTING_CASH))
         return capital * (self._maint + RISK_OFF_MARGIN)
 
-    def _reduce_largest(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
-        """Near the liquidation line: IOC out of the biggest position."""
-        held = sorted(((abs(q) * self._mark(s, market), s, q)
-                       for s, q in portfolio.positions.items()
-                       if q and not self.halts.is_halted(s) and not self._is_pending(s)),
-                      reverse=True)
-        for _, sym, qty in held:
-            bid, ask = market.best_bid(sym), market.best_ask(sym)
-            if qty > 0 and bid:
-                side, px = "sell", round(bid * (1 - SLIP_BPS / 1e4), 2)
-            elif qty < 0 and ask:
-                side, px = "buy", round(ask * (1 + SLIP_BPS / 1e4), 2)
-            else:
-                continue
-            self._mark_pending(sym)
-            logger.warning("RISK OFF: %s %d %s @ %.2f", side, abs(qty), sym, px)
-            return Signal(symbol=sym, side=side, quantity=min(abs(qty), MAX_ORDER_SHARES), price=px)
+    def _marks(self, market: MarketData, portfolio: Portfolio) -> dict[str, float]:
+        """Venue marks for every symbol held or quoted."""
+        syms = set(self._ref) | {s for s, q in portfolio.positions.items() if q}
+        return {s: m for s in syms if (m := self._mark(s, market))}
+
+    def _close(self, sym: str, market: MarketData, portfolio: Portfolio,
+               why: str) -> Signal | None:
+        """An IOC that closes (up to MAX_ORDER_SHARES of) the position in sym.
+        gate() lets it through every growth limit; halted symbols wait."""
+        qty = portfolio.positions.get(sym, 0)
+        if not qty or self.halts.is_halted(sym) or self._is_pending(sym):
+            return None
+        bid, ask = market.best_bid(sym), market.best_ask(sym)
+        mark = self._ref.get(sym)                 # after a gap the touch can be stale:
+        if qty > 0 and bid:                       # price off the worse of the two
+            side, px = "sell", round(min(bid, mark or bid) * (1 - SLIP_BPS / 1e4), 2)
+        elif qty < 0 and ask:
+            side, px = "buy", round(max(ask, mark or ask) * (1 + SLIP_BPS / 1e4), 2)
+        else:
+            return None
+        self._mark_pending(sym)
+        logger.warning("%s: %s %d %s @ %.2f", why, side, abs(qty), sym, px)
+        self._end_strategies(sym, why)
+        self._closing_sig = Signal(symbol=sym, side=side,
+                                   quantity=min(abs(qty), MAX_ORDER_SHARES), price=px)
+        return self._closing_sig
+
+    def _end_strategies(self, sym: str, why: str) -> None:
+        """A stop overrides the strategy: end whatever was trading sym, or its
+        exit logic would buy back what the stop just sold (the signal returns
+        to the position it held before the print)."""
+        ended = []
+        if sym in self.signal.plans:
+            self.signal._close(sym, int(self.clock.now()))
+            ended.append("signal plan")
+        if self._flash.pop(sym, None) is not None:
+            ended.append("flash trade")
+        if self._listings.pop(sym, None) is not None:
+            ended.append("listing")
+        if ended:
+            logger.warning("%s %s: ended the %s", why, sym, ", ".join(ended))
+            self._save_state()
+
+    def _reduce_largest(self, market: MarketData, portfolio: Portfolio,
+                        why: str = "RISK OFF") -> Signal | None:
+        """IOC out of the biggest position (near liquidation, or the kill switch)."""
+        held = sorted(((abs(q) * self._mark(s, market), s)
+                       for s, q in portfolio.positions.items() if q), reverse=True)
+        for _, sym in held:
+            sig = self._close(sym, market, portfolio, why)
+            if sig is not None:
+                return sig
         return None
 
     def gate(self, sig: Signal, market: MarketData, portfolio: Portfolio) -> Signal | None:
@@ -623,6 +682,18 @@ class MyTrader(Trader):
             return self._blocked(sig, "auction: IOCs are refused")
         if self.halts.is_halted(sym):
             return self._blocked(sig, "symbol halted")
+        closing = sig is self._closing_sig
+        self._closing_sig = None
+        marks = self._marks(market, portfolio)
+        risk_qty, why = self.risk.check(
+            sym, side, qty, px, self.clock.now(), portfolio.positions, marks,
+            self._equity(market, portfolio), market.best_bid(sym), market.best_ask(sym),
+            closing=closing)
+        if risk_qty <= 0:
+            return self._blocked(sig, f"risk: {why}")
+        if risk_qty < qty:
+            logger.info("Risk: %s %s %d -> %d (%s)", side, sym, qty, risk_qty, why)
+            qty = risk_qty
         pos = portfolio.positions.get(sym, 0)
         flying = self._in_flight(sym, side)
         max_long, max_short = self._seat_caps(sym)
@@ -635,11 +706,6 @@ class MyTrader(Trader):
             room = min(pos + max_short, team + team_cap) - flying
             shrinks = max(0, pos) - flying
         allowed = shrinks if self._risk_off else max(room, shrinks)
-        if min(qty, allowed) > max(0, shrinks) and not self._risk_off:
-            mark = self._mark(sym, market) or px
-            gross = sum(abs(q) * self._mark(s, market) for s, q in portfolio.positions.items())
-            spare = MAX_GROSS_LEVERAGE * self._equity(market, portfolio) - gross
-            allowed = min(allowed, max(0, shrinks) + max(0, int(spare // mark)))
         qty = min(qty, allowed, MAX_ORDER_SHARES)
         if side == "buy" and px > 0:              # the venue checks cash on every buy
             qty = min(qty, int(portfolio.cash * CASH_USE / px))
@@ -649,9 +715,13 @@ class MyTrader(Trader):
                                  f"caps=+{max_long}/-{max_short} team={team}")
         ref = self._ref.get(sym)
         if ref and self._luld > 0:                # the venue rejects prices outside the band
+            # Both edges: after a gap the touch can sit outside the band on
+            # either side (a stale bid above it after a crash).
             band = max(0.0, self._luld - LULD_MARGIN_PCT)
-            px = (min(px, int(ref * (1 + band) * 100) / 100) if side == "buy"
-                  else max(px, -int(-ref * (1 - band) * 100) / 100))
+            lo, hi = -int(-ref * (1 - band) * 100) / 100, int(ref * (1 + band) * 100) / 100
+            px = min(max(px, lo), hi)
+        if closing:
+            logger.info("Gate: closing order %s %s %d passed the risk layer", side, sym, qty)
         if qty != sig.quantity or px != sig.price:
             logger.info("Gate: %s %s %d @ %.2f -> %d @ %.2f", side, sym,
                         sig.quantity, sig.price, qty, px)
@@ -665,6 +735,7 @@ class MyTrader(Trader):
         the reaction to a flash on its first order."""
         self._inflight.append([self.clock.now() + PENDING_TICKS, sig.symbol, sig.side, sig.quantity])
         self.msgs_sent += 1
+        self.risk.on_send(self.clock.now())
         ft = self._flash.get(sig.symbol)
         if ft is not None and ft.react_ms is None:
             ft.react_ms = (time.monotonic() - ft.wall) * 1000
@@ -716,6 +787,7 @@ class MyTrader(Trader):
     # ── Venue callbacks ─────────────────────────────────────────────────
     def on_book(self, symbol: str, ref_price: float) -> None:
         """Keep the venue mark, which the LULD band and maintenance check use."""
+        self.risk.on_data(self.clock.now())
         if ref_price > 0:
             self._ref[symbol] = ref_price
             fair = self._fair.get(symbol)
@@ -749,11 +821,13 @@ class MyTrader(Trader):
             self._state_loaded = True
             self.signal.plans.clear()
             self._listings.clear()
+            self._offer.clear()
             self._flash.clear()
             self._save_state()
             self._ssr.clear()
             self._open_mid.clear()
             self.halts.clear()
+            self.risk.new_session(self.clock.now())
             self._liquidated = False
             self._capital = None
             if "probe" in self.roles:
@@ -817,6 +891,7 @@ class MyTrader(Trader):
     def on_reject(self, code: str | None, message: str | None) -> None:
         """React to a venue reject: shorts, halts, liquidation, IPO cash."""
         logger.warning("REJECT [%s]: %s", code, message)
+        self.risk.on_reject(code, self.clock.now())
         if code == "RATE_LIMITED":                # the team's quota is spent: ease off
             self.rate_limited += 1
             self.msgs_sent = max(0, self.msgs_sent - 1)   # it never reached the book
@@ -835,6 +910,7 @@ class MyTrader(Trader):
     def on_fill(self, side: str, symbol: str, quantity: int, price: float) -> None:
         """Settle the in-flight count and charge the fill to the plan or the probe."""
         now = self.clock.now()
+        self.risk.on_fill(symbol, side, quantity, price)
         if self._is_pending(symbol):              # an IOC fills at once; let the rest land
             self._pending[symbol] = min(self._pending[symbol], now + FILL_SETTLE_TICKS)
         left = quantity                           # these shares are no longer in flight
@@ -871,6 +947,7 @@ class MyTrader(Trader):
             self.maybe_log_stats()
             self.msgs_sent = self.rate_limited = 0
             self.flash_log = []
+            self.risk.new_session(self.clock.now())   # open-play losses don't count
             logger.info("WEEK → %s: quota and flash counters reset", data.get("week"))
         elif event == "FEE_SCHEDULE" and isinstance(data.get("taker"), (int, float)):
             self.signal.set_fee(float(data["taker"]))
@@ -891,6 +968,10 @@ class MyTrader(Trader):
             logger.info("IPO indication confirmed: %s", message)
         elif event == "IPO_PRICED":
             self._ipo.pop(data.get("symbol"), None)
+            if data.get("symbol") and isinstance(data.get("offer_price"), (int, float)):
+                # The allocation is paid for now but has no mark until it lists:
+                # value it at the offer, or the session stop sees a fake loss.
+                self._offer[data["symbol"]] = float(data["offer_price"])
         elif event == "IPO_LISTED" and data.get("symbol") and data.get("offer_price"):
             offer = float(data["offer_price"])
             self._listings[data["symbol"]] = {"offer": offer, "high": offer, "t0": self.clock.now()}
@@ -957,6 +1038,7 @@ class TakerBot(_AdaptedTraderBot):
         """Connect, tap the socket, and track whether the portfolio is synced."""
         await super().connect()
         self._ws = _WireTap(self._ws, self)
+        self._owner.risk.on_connect(self._owner.clock.now())
         # A reconnect gets no PortfolioUpdate until the first fill, so cash and
         # positions come from the leaderboard (every ~2 s) until one arrives.
         self._portfolio_synced = False

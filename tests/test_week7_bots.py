@@ -138,6 +138,7 @@ def test_a_filled_fade_buys_back_once_the_flash_reverts():
     t.note_sent(order)
     t.on_fill("sell", "AMD", order.quantity, 101.8)
     t.portfolio.positions["AMD"] = -order.quantity
+    t.portfolio.cash += order.quantity * 101.8      # a short sale credits the cash
     t.clock.note(100.5)
     assert t.on_tick(FakeMarket(AMD=(101.5, 101.7)), t.portfolio) is None   # not back yet
     t.clock.note(101.0)

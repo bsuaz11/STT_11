@@ -1,0 +1,60 @@
+Session 6 (Fri Nov 6) — session_week06_20261106_214023_market.jsonl.gz
+played through scripts/replay_session.py at ×60: 47842 messages captured off the socket, every one identical to the recording from record 19 on (the 19 before it went out while the listener connected: t0–t0). Ticks count from the tape's first record (t0 = venue tick 2442424).
+
+LIVE — what our seats did on Nov 6 (the week-6 bot, before this phase)
+  scenario events on the wire: 22
+    t15  TRADING_HALT     TSLA   Trading halted on TSLA: TSLA velocity halt: 5.1% move in 60s (threshold 5.0%)
+    t150  IPO_OPEN         VLTA   VLTA book is OPEN — subscribe with quantity and max price ($30.00–34.00) before 
+    t250  CALENDAR_EVENT   INTC   Earnings: INTC moving -5.8%
+    t255  TRADING_RESUMED  NFLX   Trading resumed on NFLX
+    t255  TRADING_RESUMED  AMD    Trading resumed on AMD
+    t259  TRADING_HALT     INTC   Trading halted on INTC: INTC velocity halt: 5.1% move in 60s (threshold 5.0%)
+    t263  SSR_ON           INTC   INTC is now under the short-sale rule — shorts must add liquidity above the bid
+    t268  TRADING_RESUMED  TSLA   Trading resumed on TSLA
+    t283  SSR_ON           TSLA   TSLA is now under the short-sale rule — shorts must add liquidity above the bid
+    t300  TRADING_HALT     TSLA   Trading halted on TSLA: TSLA velocity halt: 5.1% move in 60s (threshold 5.0%)
+    t420  IPO_PRICED       VLTA   VLTA priced at $34.00 — 8,282 shares subscribed for 3,500 offered; lists t520
+    t501  TRADING_RESUMED  INTC   Trading resumed on INTC
+    t520  IPO_LISTED       VLTA   VLTA is now trading — offered at $34.00. Where it belongs is yours to discover.
+    t541  TRADING_RESUMED  TSLA   Trading resumed on TSLA
+    t600  CALENDAR_EVENT   MSFT   Earnings: MSFT moving +3.1%
+    t950  CALENDAR_EVENT          Econ Print: market-wide moving -2.2%
+    t976  SSR_ON           VLTA   VLTA is now under the short-sale rule — shorts must add liquidity above the bid
+    t977  SSR_ON           NFLX   NFLX is now under the short-sale rule — shorts must add liquidity above the bid
+    t986  TRADING_HALT     VLTA   Trading halted on VLTA: VLTA velocity halt: 5.0% move in 60s (threshold 5.0%)
+    t992  TRADING_HALT     NFLX   Trading halted on NFLX: NFLX velocity halt: 5.1% move in 60s (threshold 5.0%)
+    t1224  TRADING_RESUMED  VLTA   Trading resumed on VLTA
+    t1231  TRADING_RESUMED  NFLX   Trading resumed on NFLX
+  liquidations of our seats: none
+  fills in a symbol while it was halted: 2
+    trader_1 sell 5 TSLA 0 ticks into the halt (t300) — an IOC already in flight when the halt hit
+    trader_2 sell 10 VLTA 0 ticks into the halt (t986) — an IOC already in flight when the halt hit
+  largest position from fills per seat (limit 1000, IPO allocation excluded): broker_1 150 VLTA (t970), trader_1 171 VLTA (t1230), trader_2 192 MSFT (t607)
+  halts and our first trader fill after each resume (live had no settle rule):
+    TSLA  halted t15 resumed t268 (253 ticks): first trader fill +20 ticks
+    INTC  halted t259 resumed t501 (242 ticks): first trader fill +0 ticks
+    TSLA  halted t300 resumed t541 (241 ticks): first trader fill +0 ticks
+    VLTA  halted t986 resumed t1224 (238 ticks): first trader fill +1 ticks
+    NFLX  halted t992 resumed t1231 (239 ticks): first trader fill +3 ticks
+
+RISK LAYER ON THE SAME TAPE — our seats' real fills and the real marks, fed to today's team/risk.py
+  trader_1
+    worst session P&L -587.84 at t1337 (soft stop −3,000, hard −5,000)
+    soft stop: no   hard stop: no   kill switch trips: none
+    session P&L when the IPO priced (t420, allocation valued at the offer until it lists): -103.08
+    t420  IPO allocation (inferred) 171 VLTA @ 34.00
+    t956  POSITION STOP VLTA: +171 entry 34.00 mark 32.60 (-4.1%) → flatten, no new VLTA for 60 ticks
+    t1225  POSITION STOP VLTA: +76 entry 33.90 mark 31.92 (-5.8%) → flatten, no new VLTA for 60 ticks
+  trader_2
+    worst session P&L -722.08 at t605 (soft stop −3,000, hard −5,000)
+    soft stop: no   hard stop: no   kill switch trips: none
+    session P&L when the IPO priced (t420, allocation valued at the offer until it lists): -121.72
+    t420  IPO allocation (inferred) 171 VLTA @ 34.00
+    t956  POSITION STOP VLTA: +171 entry 34.00 mark 32.60 (-4.1%) → flatten, no new VLTA for 60 ticks
+
+  resume gate on the real books: ticks until new exposure was allowed (settle 3 ticks + two-sided book ≤100 bps)
+    TSLA  resumed t268: re-entry allowed +6 ticks
+    INTC  resumed t501: re-entry allowed +6 ticks
+    TSLA  resumed t541: re-entry allowed +4 ticks
+    VLTA  resumed t1224: re-entry allowed +3 ticks
+    NFLX  resumed t1231: re-entry allowed +3 ticks
