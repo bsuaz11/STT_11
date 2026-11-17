@@ -1,0 +1,348 @@
+t00000  INFO    team.trader  Seat stt_11_trader_1 roles: ipo, probe, signal
+t00000  INFO    team.trader  Seat stt_11_trader_2 roles: ipo, signal
+t00013  INFO    team.trader  Session rules: shorts=True limit=1000 SSR=6.0% LULD=8.0% maint=40% | seat caps +830/-830, fee 40 bps
+t00013  INFO    team.risk    Session baseline equity 158054.06 (soft stop at 155054.06, hard at 153054.06)
+t00013  INFO    team.trader  Probe: round trip of 5 MSFT
+t00013  INFO    team.trader  Session rules: shorts=True limit=1000 SSR=6.0% LULD=8.0% maint=40% | seat caps +830/-830, fee 40 bps
+t00013  INFO    team.risk    Session baseline equity 158054.06 (soft stop at 155054.06, hard at 153054.06)
+t00142  INFO    team.trader  Event: CALENDAR | Upcoming: earnings INTC @ t250 | {'tick': 142, 'week': 6, 'events': [{'kind': 'earnings', 'tick': 250, 'symbol': 'INTC', 'magnitude_range': [0.03, 0.08]}, {'kind': 'earnings', 'tick': 600, 'symbol': 'MSFT', 'magnitude_range': [0.03, 0.07]}, {'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}, {'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'earnings', 'tick': 250, 'symbol': 'INTC', 'magnitude_range': [0.03, 0.08]}], 'announce_lead': 120, 'early': False}
+t00142  INFO    team.trader  Event: CALENDAR | Upcoming: earnings INTC @ t250 | {'tick': 142, 'week': 6, 'events': [{'kind': 'earnings', 'tick': 250, 'symbol': 'INTC', 'magnitude_range': [0.03, 0.08]}, {'kind': 'earnings', 'tick': 600, 'symbol': 'MSFT', 'magnitude_range': [0.03, 0.07]}, {'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}, {'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'earnings', 'tick': 250, 'symbol': 'INTC', 'magnitude_range': [0.03, 0.08]}], 'announce_lead': 120, 'early': False}
+t00162  INFO    team.trader  Event: IPO_OPEN | VLTA book is OPEN — subscribe with quantity and max price ($30.00–34.00) before t420 | {'symbol': 'VLTA', 'name': 'Volta Grid', 'shares': 3500, 'offer_range': [30.0, 34.0], 'window': [150, 420], 'list_tick': 520, 'state': 'open', 'offer_price': None}
+t00162  INFO    team.trader  Event: IPO_OPEN | VLTA book is OPEN — subscribe with quantity and max price ($30.00–34.00) before t420 | {'symbol': 'VLTA', 'name': 'Volta Grid', 'shares': 3500, 'offer_range': [30.0, 34.0], 'window': [150, 420], 'list_tick': 520, 'state': 'open', 'offer_price': None}
+t00162  INFO    team.trader  IPO VLTA: bidding 400 at 34.00
+t00162  INFO    team.trader  IPO VLTA: bidding 400 at 34.00
+t00180  ERROR   team.risk    POSITION STOP AMD: +20 @ entry 165.28, mark 150.63, loss $292.84 — flattening, no new exposure for 60 ticks
+t00180  WARNING team.trader  POSITION STOP: sell 20 AMD @ 150.33
+t00180  INFO    team.trader  Gate: closing order sell AMD 20 passed the risk layer
+t00180  WARNING exchange.server HALT AMD — AMD velocity halt: 9.2% move in 60s (threshold 5.0%) (halt #1)
+t00180  INFO    team.trader  Event: TRADING_HALT | Trading halted on AMD: AMD velocity halt: 9.2% move in 60s (threshold 5.0%) | {'symbol': 'AMD', 'reason': 'AMD velocity halt: 9.2% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943585.799715, 'halt_num': 1}
+t00180  WARNING team.common  HALT AMD until tick 480
+t00180  INFO    team.trader  Event: TRADING_HALT | Trading halted on AMD: AMD velocity halt: 9.2% move in 60s (threshold 5.0%) | {'symbol': 'AMD', 'reason': 'AMD velocity halt: 9.2% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943585.799715, 'halt_num': 1}
+t00180  WARNING team.common  HALT AMD until tick 479
+t00180  ERROR   team.risk    POSITION STOP AMD: +20 @ entry 165.28, mark 150.63, loss $292.96 — flattening, no new exposure for 60 ticks
+t00181  INFO    team.trader  Event: SSR_ON | AMD is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'AMD'}
+t00181  INFO    team.trader  Event: SSR_ON | AMD is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'AMD'}
+t00262  INFO    team.trader  Event: CALENDAR_EVENT | Earnings: INTC moving -4.3% | {'kind': 'earnings', 'symbol': 'INTC', 'market_wide': False, 'pct': -0.042696, 'affected': ['INTC'], 'ramp_ticks': 15, 'overshoot': 1.3, 'tick': 262}
+t00262  INFO    team.trader  EVENTGAP print INTC -4.27%: pre_mark=21.96 fair=21.03 edge=80 bps
+t00262  INFO    team.trader  Event: CALENDAR_EVENT | Earnings: INTC moving -4.3% | {'kind': 'earnings', 'symbol': 'INTC', 'market_wide': False, 'pct': -0.042696, 'affected': ['INTC'], 'ramp_ticks': 15, 'overshoot': 1.3, 'tick': 262}
+t00262  INFO    team.trader  EVENTGAP print INTC -4.27%: pre_mark=21.96 fair=21.03 edge=80 bps
+t00275  WARNING exchange.server HALT INTC — INTC velocity halt: 5.0% move in 60s (threshold 5.0%) (halt #1)
+t00275  INFO    team.trader  Event: TRADING_HALT | Trading halted on INTC: INTC velocity halt: 5.0% move in 60s (threshold 5.0%) | {'symbol': 'INTC', 'reason': 'INTC velocity halt: 5.0% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943586.04496, 'halt_num': 1}
+t00275  WARNING team.common  HALT INTC until tick 574
+t00275  INFO    team.trader  Event: TRADING_HALT | Trading halted on INTC: INTC velocity halt: 5.0% move in 60s (threshold 5.0%) | {'symbol': 'INTC', 'reason': 'INTC velocity halt: 5.0% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943586.04496, 'halt_num': 1}
+t00275  WARNING team.common  HALT INTC until tick 574
+t00420  WARNING exchange.server HALT NFLX — NFLX velocity halt: 7.1% move in 60s (threshold 5.0%) (halt #1)
+t00420  INFO    team.trader  Event: TRADING_HALT | Trading halted on NFLX: NFLX velocity halt: 7.1% move in 60s (threshold 5.0%) | {'symbol': 'NFLX', 'reason': 'NFLX velocity halt: 7.1% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943586.3389041, 'halt_num': 1}
+t00420  WARNING team.common  HALT NFLX until tick 720
+t00420  INFO    team.trader  Event: TRADING_HALT | Trading halted on NFLX: NFLX velocity halt: 7.1% move in 60s (threshold 5.0%) | {'symbol': 'NFLX', 'reason': 'NFLX velocity halt: 7.1% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943586.3389041, 'halt_num': 1}
+t00420  WARNING team.common  HALT NFLX until tick 720
+t00432  INFO    team.trader  Event: IPO_PRICED | VLTA priced at $32.00 — 4,629 shares subscribed for 3,500 offered; lists t520 | {'symbol': 'VLTA', 'name': 'Volta Grid', 'shares': 3500, 'offer_range': [30.0, 34.0], 'window': [150, 420], 'list_tick': 520, 'state': 'priced', 'offer_price': 32.0}
+t00432  INFO    team.trader  Event: IPO_PRICED | VLTA priced at $32.00 — 4,629 shares subscribed for 3,500 offered; lists t520 | {'symbol': 'VLTA', 'name': 'Volta Grid', 'shares': 3500, 'offer_range': [30.0, 34.0], 'window': [150, 420], 'list_tick': 520, 'state': 'priced', 'offer_price': 32.0}
+t00480  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on AMD | {'symbol': 'AMD'}
+t00480  INFO    team.trader  RESUMED AMD — re-entering only once the book settles
+t00480  INFO    team.risk    RESUME AMD: no new exposure for 3 ticks, then only into a two-sided book
+t00480  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on AMD | {'symbol': 'AMD'}
+t00480  INFO    team.trader  RESUMED AMD — re-entering only once the book settles
+t00480  INFO    team.risk    RESUME AMD: no new exposure for 3 ticks, then only into a two-sided book
+t00481  INFO    team.trader  Probe: round trip of 5 AMD
+t00486  INFO    team.risk    RESUME AMD: book settled (50 bps) — re-entering
+t00486  WARNING team.trader  POSITION STOP: sell 20 AMD @ 150.38
+t00486  INFO    team.trader  Gate: closing order sell AMD 20 passed the risk layer
+t00492  INFO    team.trader  Event: CALENDAR | Upcoming: earnings MSFT @ t600 | {'tick': 492, 'week': 6, 'events': [{'kind': 'earnings', 'tick': 600, 'symbol': 'MSFT', 'magnitude_range': [0.03, 0.07]}, {'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}, {'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'earnings', 'tick': 600, 'symbol': 'MSFT', 'magnitude_range': [0.03, 0.07]}], 'announce_lead': 120, 'early': False}
+t00492  INFO    team.trader  Event: CALENDAR | Upcoming: earnings MSFT @ t600 | {'tick': 492, 'week': 6, 'events': [{'kind': 'earnings', 'tick': 600, 'symbol': 'MSFT', 'magnitude_range': [0.03, 0.07]}, {'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}, {'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'earnings', 'tick': 600, 'symbol': 'MSFT', 'magnitude_range': [0.03, 0.07]}], 'announce_lead': 120, 'early': False}
+t00532  INFO    team.trader  Event: IPO_LISTED | VLTA is now trading — offered at $32.00. Where it belongs is yours to discover. | {'symbol': 'VLTA', 'name': 'Volta Grid', 'shares': 3500, 'offer_range': [30.0, 34.0], 'window': [150, 420], 'list_tick': 520, 'state': 'listed', 'offer_price': 32.0}
+t00532  INFO    team.trader  Event: IPO_LISTED | VLTA is now trading — offered at $32.00. Where it belongs is yours to discover. | {'symbol': 'VLTA', 'name': 'Volta Grid', 'shares': 3500, 'offer_range': [30.0, 34.0], 'window': [150, 420], 'list_tick': 520, 'state': 'listed', 'offer_price': 32.0}
+t00535  WARNING exchange.server HALT VLTA — VLTA session-band halt: 44.7% from open (threshold 25.0%) (halt #1)
+t00535  INFO    team.trader  Event: TRADING_HALT | Trading halted on VLTA: VLTA session-band halt: 44.7% from open (threshold 25.0%) | {'symbol': 'VLTA', 'reason': 'VLTA session-band halt: 44.7% from open (threshold 25.0%)', 'duration': 300, 'resume_at': 1794943586.597613, 'halt_num': 1}
+t00535  WARNING team.common  HALT VLTA until tick 835
+t00535  INFO    team.trader  Event: TRADING_HALT | Trading halted on VLTA: VLTA session-band halt: 44.7% from open (threshold 25.0%) | {'symbol': 'VLTA', 'reason': 'VLTA session-band halt: 44.7% from open (threshold 25.0%)', 'duration': 300, 'resume_at': 1794943586.597613, 'halt_num': 1}
+t00535  WARNING team.common  HALT VLTA until tick 835
+t00575  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on INTC | {'symbol': 'INTC'}
+t00575  INFO    team.trader  RESUMED INTC — re-entering only once the book settles
+t00575  INFO    team.risk    RESUME INTC: no new exposure for 3 ticks, then only into a two-sided book
+t00575  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on INTC | {'symbol': 'INTC'}
+t00575  INFO    team.trader  RESUMED INTC — re-entering only once the book settles
+t00575  INFO    team.risk    RESUME INTC: no new exposure for 3 ticks, then only into a two-sided book
+t00576  INFO    team.trader  Probe: round trip of 5 INTC
+t00586  INFO    team.risk    RESUME INTC: book settled (52 bps) — re-entering
+t00612  INFO    team.trader  Event: CALENDAR_EVENT | Earnings: MSFT moving +3.0% | {'kind': 'earnings', 'symbol': 'MSFT', 'market_wide': False, 'pct': 0.030206, 'affected': ['MSFT'], 'ramp_ticks': 15, 'overshoot': 1.3, 'tick': 612}
+t00612  INFO    team.trader  EVENTGAP print MSFT +3.02%: pre_mark=414.70 fair=427.22 edge=80 bps
+t00612  INFO    team.trader  Event: CALENDAR_EVENT | Earnings: MSFT moving +3.0% | {'kind': 'earnings', 'symbol': 'MSFT', 'market_wide': False, 'pct': 0.030206, 'affected': ['MSFT'], 'ramp_ticks': 15, 'overshoot': 1.3, 'tick': 612}
+t00612  INFO    team.trader  EVENTGAP print MSFT +3.02%: pre_mark=414.70 fair=427.22 edge=80 bps
+t00692  INFO    team.trader  Event: CALENDAR | Upcoming: dividend NVDA @ t800 | {'tick': 692, 'week': 6, 'events': [{'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}, {'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}], 'announce_lead': 120, 'early': False}
+t00692  INFO    team.trader  Event: CALENDAR | Upcoming: dividend NVDA @ t800 | {'tick': 692, 'week': 6, 'events': [{'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}, {'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'dividend', 'tick': 800, 'symbol': 'NVDA', 'amount_per_share': 0.3}], 'announce_lead': 120, 'early': False}
+t00700  WARNING team.stress  HUMAN: dropped KILL.stt_11_trader_2 (flatten)
+t00701  ERROR   team.risk    KILL SWITCH ON [manual] seat=stt_11_trader_2 flatten=True until reset
+t00701  WARNING team.trader  KILL SWITCH flatten: sell 20 META @ 574.55
+t00701  INFO    team.trader  Gate: closing order sell META 20 passed the risk layer
+t00702  WARNING team.trader  KILL SWITCH flatten: sell 20 MSFT @ 426.96
+t00702  INFO    team.trader  Gate: closing order sell MSFT 20 passed the risk layer
+t00703  WARNING team.trader  KILL SWITCH flatten: sell 20 TSLA @ 275.13
+t00703  INFO    team.trader  Gate: closing order sell TSLA 20 passed the risk layer
+t00704  WARNING team.trader  KILL SWITCH flatten: sell 20 AAPL @ 218.54
+t00704  INFO    team.trader  Gate: closing order sell AAPL 20 passed the risk layer
+t00705  WARNING team.trader  KILL SWITCH flatten: sell 20 AMZN @ 197.23
+t00705  INFO    team.trader  Gate: closing order sell AMZN 20 passed the risk layer
+t00706  WARNING team.trader  KILL SWITCH flatten: sell 15 TSLA @ 274.83
+t00706  INFO    team.trader  Gate: closing order sell TSLA 15 passed the risk layer
+t00707  WARNING team.trader  KILL SWITCH flatten: sell 20 GOOGL @ 176.16
+t00707  INFO    team.trader  Gate: closing order sell GOOGL 20 passed the risk layer
+t00708  WARNING team.trader  KILL SWITCH flatten: sell 20 NVDA @ 127.43
+t00708  INFO    team.trader  Gate: closing order sell NVDA 20 passed the risk layer
+t00709  WARNING team.trader  KILL SWITCH flatten: sell 20 INTC @ 20.98
+t00709  INFO    team.trader  Gate: closing order sell INTC 20 passed the risk layer
+t00720  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on NFLX | {'symbol': 'NFLX'}
+t00720  INFO    team.trader  RESUMED NFLX — re-entering only once the book settles
+t00720  INFO    team.risk    RESUME NFLX: no new exposure for 3 ticks, then only into a two-sided book
+t00720  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on NFLX | {'symbol': 'NFLX'}
+t00720  INFO    team.trader  RESUMED NFLX — re-entering only once the book settles
+t00720  INFO    team.risk    RESUME NFLX: no new exposure for 3 ticks, then only into a two-sided book
+t00721  INFO    team.trader  Probe: round trip of 5 NFLX
+t00726  INFO    team.risk    RESUME NFLX: book settled (50 bps) — re-entering
+t00726  WARNING team.trader  KILL SWITCH flatten: sell 20 NFLX @ 776.65
+t00726  INFO    team.trader  Gate: closing order sell NFLX 20 passed the risk layer
+t00760  WARNING team.stress  HUMAN: removed KILL.stt_11_trader_2
+t00761  WARNING team.risk    KILL SWITCH released [manual] seat=stt_11_trader_2
+t00812  INFO    team.trader  Event: DIVIDEND | NVDA pays $0.30/share — longs credited, shorts debited, price marked down ex-dividend | {'symbol': 'NVDA', 'amount_per_share': 0.3, 'net_paid': 72.0, 'tick': 812}
+t00812  INFO    team.trader  Event: DIVIDEND | NVDA pays $0.30/share — longs credited, shorts debited, price marked down ex-dividend | {'symbol': 'NVDA', 'amount_per_share': 0.3, 'net_paid': 72.0, 'tick': 812}
+t00835  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on VLTA | {'symbol': 'VLTA'}
+t00835  INFO    team.trader  RESUMED VLTA — re-entering only once the book settles
+t00835  INFO    team.risk    RESUME VLTA: no new exposure for 3 ticks, then only into a two-sided book
+t00835  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on VLTA | {'symbol': 'VLTA'}
+t00835  INFO    team.trader  RESUMED VLTA — re-entering only once the book settles
+t00835  INFO    team.risk    RESUME VLTA: no new exposure for 3 ticks, then only into a two-sided book
+t00836  INFO    team.trader  Probe: round trip of 5 VLTA
+t00840  WARNING exchange.server HALT VLTA — VLTA session-band halt: 43.8% from open (threshold 25.0%) (halt #2)
+t00840  INFO    team.trader  Event: TRADING_HALT | Trading halted on VLTA: VLTA session-band halt: 43.8% from open (threshold 25.0%) | {'symbol': 'VLTA', 'reason': 'VLTA session-band halt: 43.8% from open (threshold 25.0%)', 'duration': 300, 'resume_at': 1794943587.351223, 'halt_num': 2}
+t00840  WARNING team.common  HALT VLTA until tick 1140
+t00840  INFO    team.trader  Event: TRADING_HALT | Trading halted on VLTA: VLTA session-band halt: 43.8% from open (threshold 25.0%) | {'symbol': 'VLTA', 'reason': 'VLTA session-band halt: 43.8% from open (threshold 25.0%)', 'duration': 300, 'resume_at': 1794943587.351223, 'halt_num': 2}
+t00840  WARNING team.common  HALT VLTA until tick 1140
+t00842  INFO    team.trader  Event: CALENDAR | Upcoming: econ_print MARKET @ t950 | {'tick': 842, 'week': 6, 'events': [{'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'announce_lead': 120, 'early': False}
+t00842  INFO    team.trader  Event: CALENDAR | Upcoming: econ_print MARKET @ t950 | {'tick': 842, 'week': 6, 'events': [{'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'imminent': [{'kind': 'econ_print', 'tick': 950, 'market_wide': True, 'magnitude_range': [0.015, 0.03]}], 'announce_lead': 120, 'early': False}
+t00962  INFO    team.trader  Event: CALENDAR_EVENT | Econ Print: market-wide moving -2.2% | {'kind': 'econ_print', 'symbol': None, 'market_wide': True, 'pct': -0.022078, 'affected': ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'ARENA10', 'VLTA'], 'ramp_ticks': 15, 'overshoot': 1.3, 'tick': 962}
+t00962  INFO    team.trader  EVENTGAP print AAPL -2.21%: pre_mark=216.72 fair=211.93 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print MSFT -2.21%: pre_mark=428.44 fair=418.98 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print NVDA -2.21%: pre_mark=127.26 fair=124.45 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print TSLA -2.21%: pre_mark=271.92 fair=265.92 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print AMZN -2.21%: pre_mark=196.94 fair=192.59 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print GOOGL -2.21%: pre_mark=176.05 fair=172.16 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print META -2.21%: pre_mark=577.67 fair=564.92 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print NFLX -2.21%: pre_mark=778.71 fair=761.52 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print AMD -2.21%: pre_mark=153.31 fair=149.93 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print INTC -2.21%: pre_mark=20.92 fair=20.46 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print VLTA -2.21%: pre_mark=45.97 fair=44.95 edge=80 bps
+t00962  INFO    team.trader  Event: CALENDAR_EVENT | Econ Print: market-wide moving -2.2% | {'kind': 'econ_print', 'symbol': None, 'market_wide': True, 'pct': -0.022078, 'affected': ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC', 'ARENA10', 'VLTA'], 'ramp_ticks': 15, 'overshoot': 1.3, 'tick': 962}
+t00962  INFO    team.trader  EVENTGAP print AAPL -2.21%: pre_mark=216.72 fair=211.93 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print MSFT -2.21%: pre_mark=428.44 fair=418.98 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print NVDA -2.21%: pre_mark=127.26 fair=124.45 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print TSLA -2.21%: pre_mark=271.92 fair=265.92 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print AMZN -2.21%: pre_mark=196.94 fair=192.59 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print GOOGL -2.21%: pre_mark=176.05 fair=172.16 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print META -2.21%: pre_mark=577.67 fair=564.92 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print NFLX -2.21%: pre_mark=778.71 fair=761.52 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print AMD -2.21%: pre_mark=153.31 fair=149.93 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print INTC -2.21%: pre_mark=20.92 fair=20.46 edge=80 bps
+t00962  INFO    team.trader  EVENTGAP print VLTA -2.21%: pre_mark=45.97 fair=44.95 edge=80 bps
+t00963  INFO    team.trader  EVENTGAP entry: sell 500 NVDA @ 125.46 (fair=124.45 t+1)
+t00963  INFO    team.trader  EVENTGAP entry: sell 500 GOOGL @ 173.54 (fair=172.16 t+1)
+t00964  INFO    team.trader  EVENTGAP entry: sell 500 META @ 569.44 (fair=564.92 t+2)
+t00964  INFO    team.trader  Risk: sell META 500 -> 348 (notional cap (room 348))
+t00964  INFO    team.trader  Gate: sell META 500 @ 569.44 -> 348 @ 569.44
+t00964  INFO    team.trader  EVENTGAP entry: sell 500 NFLX @ 767.61 (fair=761.52 t+2)
+t00964  INFO    team.risk    RESUME NFLX: book settled (50 bps) — re-entering
+t00964  INFO    team.trader  Risk: sell NFLX 500 -> 222 (notional cap (room 222))
+t00964  INFO    team.trader  Gate: sell NFLX 500 @ 767.61 -> 222 @ 767.61
+t00966  INFO    team.trader  EVENTGAP entry: sell 500 AAPL @ 213.63 (fair=211.93 t+4)
+t00966  INFO    team.trader  EVENTGAP entry: sell 500 MSFT @ 422.34 (fair=418.98 t+4)
+t00966  INFO    team.trader  Risk: sell MSFT 500 -> 393 (notional cap (room 393))
+t00966  INFO    team.trader  Gate: sell MSFT 500 @ 422.34 -> 393 @ 422.34
+t00967  INFO    team.trader  EVENTGAP entry: sell 500 NVDA @ 125.46 (fair=124.45 t+5)
+t00967  INFO    team.trader  EVENTGAP entry: sell 500 TSLA @ 268.05 (fair=265.92 t+5)
+t00968  ERROR   team.risk    POSITION STOP TSLA: +20 @ entry 279.89, mark 268.28, loss $232.25 — flattening, no new exposure for 60 ticks
+t00968  INFO    team.trader  EVENTGAP entry: sell 500 AMZN @ 194.14 (fair=192.59 t+6)
+t00968  INFO    team.trader  EVENTGAP entry: sell 500 GOOGL @ 173.54 (fair=172.16 t+6)
+t00971  INFO    team.trader  Event: SSR_ON | INTC is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'INTC'}
+t00971  INFO    team.trader  Event: SSR_ON | INTC is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'INTC'}
+t00971  WARNING team.trader  POSITION STOP: sell 20 TSLA @ 266.19
+t00971  WARNING team.trader  POSITION STOP TSLA: ended the signal plan
+t00971  INFO    team.trader  Gate: closing order sell TSLA 20 passed the risk layer
+t00976  INFO    team.trader  EVENTGAP target: buy 25 AAPL @ 212.18 (fair=211.93 t+14)
+t00976  INFO    team.trader  EVENTGAP target: buy 17 MSFT @ 419.51 (fair=418.98 t+14)
+t00977  INFO    team.trader  EVENTGAP target: buy 50 NVDA @ 124.52 (fair=124.45 t+15)
+t00977  INFO    team.trader  EVENTGAP target: buy 15 TSLA @ 266.28 (fair=265.92 t+15)
+t00978  INFO    team.trader  EVENTGAP target: buy 25 AMZN @ 192.75 (fair=192.59 t+16)
+t00978  INFO    team.trader  EVENTGAP target: buy 50 GOOGL @ 172.27 (fair=172.16 t+16)
+t00979  INFO    team.trader  EVENTGAP target: buy 1 META @ 565.13 (fair=564.92 t+17)
+t00979  INFO    team.trader  EVENTGAP target: buy 7 NFLX @ 761.28 (fair=761.52 t+17)
+t00980  INFO    team.trader  EVENTGAP closed AAPL -2.21%: bought 25 sold 25 pnl=+34.63 fees=42.62
+t00980  INFO    team.trader  EVENTGAP closed AMZN -2.21%: bought 25 sold 25 pnl=+31.53 fees=38.72
+t00980  INFO    team.trader  EVENTGAP closed META -2.21%: bought 1 sold 1 pnl=+7.01 fees=4.55
+t00980  INFO    team.trader  EVENTGAP closed MSFT -2.21%: bought 17 sold 17 pnl=+47.25 fees=57.30
+t00980  INFO    team.trader  EVENTGAP closed TSLA -2.21%: bought 15 sold 15 pnl=+26.26 fees=32.09
+t00980  INFO    team.trader  EVENTGAP closed NFLX -2.21%: bought 7 sold 7 pnl=+75.46 fees=42.98
+t00986  INFO    team.trader  EVENTGAP target: buy 25 GOOGL @ 172.54 (fair=172.16 t+24)
+t00991  INFO    team.trader  EVENTGAP target: buy 25 NVDA @ 124.74 (fair=124.45 t+29)
+t00992  INFO    team.trader  EVENTGAP closed NVDA -2.21%: bought 50 sold 50 pnl=+60.35 fees=50.15
+t00992  INFO    team.trader  EVENTGAP time_stop: buy 16 GOOGL @ 172.90 (fair=172.16 t+30)
+t00993  INFO    team.trader  EVENTGAP closed GOOGL -2.21%: bought 50 sold 50 pnl=+78.10 fees=69.39
+t01100  ERROR   team.risk    POSITION STOP AAPL: +20 @ entry 211.55, mark 199.51, loss $240.80 — flattening, no new exposure for 60 ticks
+t01100  ERROR   team.risk    POSITION STOP MSFT: +20 @ entry 415.30, mark 395.20, loss $402.18 — flattening, no new exposure for 60 ticks
+t01100  ERROR   team.risk    POSITION STOP AMZN: +20 @ entry 192.17, mark 181.88, loss $205.77 — flattening, no new exposure for 60 ticks
+t01100  ERROR   team.risk    POSITION STOP GOOGL: +20 @ entry 174.97, mark 161.78, loss $263.75 — flattening, no new exposure for 60 ticks
+t01100  ERROR   team.risk    POSITION STOP META: +20 @ entry 579.37, mark 531.39, loss $959.51 — flattening, no new exposure for 60 ticks
+t01100  WARNING team.trader  POSITION STOP: sell 20 AAPL @ 199.11
+t01100  INFO    team.trader  Gate: closing order sell AAPL 20 passed the risk layer
+t01100  WARNING exchange.server HALT AAPL — AAPL velocity halt: 6.2% move in 60s (threshold 5.0%) (halt #1)
+t01100  INFO    team.trader  Event: TRADING_HALT | Trading halted on AAPL: AAPL velocity halt: 6.2% move in 60s (threshold 5.0%) | {'symbol': 'AAPL', 'reason': 'AAPL velocity halt: 6.2% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.065207, 'halt_num': 1}
+t01100  WARNING team.common  HALT AAPL until tick 1400
+t01100  INFO    team.trader  Event: TRADING_HALT | Trading halted on AAPL: AAPL velocity halt: 6.2% move in 60s (threshold 5.0%) | {'symbol': 'AAPL', 'reason': 'AAPL velocity halt: 6.2% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.065207, 'halt_num': 1}
+t01100  WARNING team.common  HALT AAPL until tick 1399
+t01100  WARNING exchange.server HALT NVDA — NVDA velocity halt: 5.8% move in 60s (threshold 5.0%) (halt #1)
+t01100  INFO    team.trader  Event: TRADING_HALT | Trading halted on NVDA: NVDA velocity halt: 5.8% move in 60s (threshold 5.0%) | {'symbol': 'NVDA', 'reason': 'NVDA velocity halt: 5.8% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.0703402, 'halt_num': 1}
+t01100  WARNING team.common  HALT NVDA until tick 1400
+t01100  INFO    team.trader  Event: TRADING_HALT | Trading halted on NVDA: NVDA velocity halt: 5.8% move in 60s (threshold 5.0%) | {'symbol': 'NVDA', 'reason': 'NVDA velocity halt: 5.8% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.0703402, 'halt_num': 1}
+t01100  WARNING team.common  HALT NVDA until tick 1400
+t01101  INFO    team.trader  Event: SSR_ON | AAPL is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'AAPL'}
+t01101  INFO    team.trader  Event: SSR_ON | AAPL is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'AAPL'}
+t01101  INFO    team.trader  Event: SSR_ON | NVDA is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'NVDA'}
+t01101  INFO    team.trader  Event: SSR_ON | NVDA is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'NVDA'}
+t01101  INFO    team.trader  Event: SSR_ON | TSLA is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'TSLA'}
+t01101  INFO    team.trader  Event: SSR_ON | TSLA is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'TSLA'}
+t01101  INFO    team.trader  Event: SSR_ON | AMZN is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'AMZN'}
+t01101  INFO    team.trader  Event: SSR_ON | AMZN is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'AMZN'}
+t01101  INFO    team.trader  Event: SSR_ON | GOOGL is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'GOOGL'}
+t01101  INFO    team.trader  Event: SSR_ON | GOOGL is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'GOOGL'}
+t01101  INFO    team.trader  Event: SSR_ON | META is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'META'}
+t01101  INFO    team.trader  Event: SSR_ON | META is now under the short-sale rule — shorts must add liquidity above the bid | {'symbol': 'META'}
+t01101  WARNING team.trader  POSITION STOP: sell 20 MSFT @ 393.75
+t01101  INFO    team.trader  Gate: closing order sell MSFT 20 passed the risk layer
+t01101  WARNING exchange.server HALT MSFT — MSFT velocity halt: 5.8% move in 60s (threshold 5.0%) (halt #1)
+t01101  INFO    team.trader  Event: TRADING_HALT | Trading halted on MSFT: MSFT velocity halt: 5.8% move in 60s (threshold 5.0%) | {'symbol': 'MSFT', 'reason': 'MSFT velocity halt: 5.8% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.072543, 'halt_num': 1}
+t01101  WARNING team.common  HALT MSFT until tick 1401
+t01101  INFO    team.trader  Event: TRADING_HALT | Trading halted on MSFT: MSFT velocity halt: 5.8% move in 60s (threshold 5.0%) | {'symbol': 'MSFT', 'reason': 'MSFT velocity halt: 5.8% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.072543, 'halt_num': 1}
+t01101  WARNING team.common  HALT MSFT until tick 1400
+t01101  WARNING exchange.server HALT GOOGL — GOOGL velocity halt: 6.2% move in 60s (threshold 5.0%) (halt #1)
+t01101  INFO    team.trader  Event: TRADING_HALT | Trading halted on GOOGL: GOOGL velocity halt: 6.2% move in 60s (threshold 5.0%) | {'symbol': 'GOOGL', 'reason': 'GOOGL velocity halt: 6.2% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.073237, 'halt_num': 1}
+t01101  WARNING team.common  HALT GOOGL until tick 1401
+t01101  INFO    team.trader  Event: TRADING_HALT | Trading halted on GOOGL: GOOGL velocity halt: 6.2% move in 60s (threshold 5.0%) | {'symbol': 'GOOGL', 'reason': 'GOOGL velocity halt: 6.2% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.073237, 'halt_num': 1}
+t01101  WARNING team.common  HALT GOOGL until tick 1401
+t01102  WARNING team.trader  POSITION STOP: sell 20 AMZN @ 181.16
+t01102  INFO    team.trader  Gate: closing order sell AMZN 20 passed the risk layer
+t01102  WARNING exchange.server HALT AMZN — AMZN velocity halt: 5.8% move in 60s (threshold 5.0%) (halt #1)
+t01102  INFO    team.trader  Event: TRADING_HALT | Trading halted on AMZN: AMZN velocity halt: 5.8% move in 60s (threshold 5.0%) | {'symbol': 'AMZN', 'reason': 'AMZN velocity halt: 5.8% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.074199, 'halt_num': 1}
+t01102  WARNING team.common  HALT AMZN until tick 1402
+t01102  INFO    team.trader  Event: TRADING_HALT | Trading halted on AMZN: AMZN velocity halt: 5.8% move in 60s (threshold 5.0%) | {'symbol': 'AMZN', 'reason': 'AMZN velocity halt: 5.8% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.074199, 'halt_num': 1}
+t01102  WARNING team.common  HALT AMZN until tick 1401
+t01103  WARNING team.trader  POSITION STOP: sell 20 META @ 529.00
+t01103  INFO    team.trader  Gate: closing order sell META 20 passed the risk layer
+t01103  WARNING exchange.server HALT META — META velocity halt: 5.9% move in 60s (threshold 5.0%) (halt #1)
+t01103  INFO    team.trader  Event: TRADING_HALT | Trading halted on META: META velocity halt: 5.9% move in 60s (threshold 5.0%) | {'symbol': 'META', 'reason': 'META velocity halt: 5.9% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.076528, 'halt_num': 1}
+t01103  WARNING team.common  HALT META until tick 1403
+t01103  INFO    team.trader  Event: TRADING_HALT | Trading halted on META: META velocity halt: 5.9% move in 60s (threshold 5.0%) | {'symbol': 'META', 'reason': 'META velocity halt: 5.9% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.076528, 'halt_num': 1}
+t01103  WARNING team.common  HALT META until tick 1402
+t01103  WARNING exchange.server HALT NFLX — NFLX velocity halt: 6.3% move in 60s (threshold 5.0%) (halt #2)
+t01103  INFO    team.trader  Event: TRADING_HALT | Trading halted on NFLX: NFLX velocity halt: 6.3% move in 60s (threshold 5.0%) | {'symbol': 'NFLX', 'reason': 'NFLX velocity halt: 6.3% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.0772061, 'halt_num': 2}
+t01103  WARNING team.common  HALT NFLX until tick 1403
+t01103  INFO    team.trader  Event: TRADING_HALT | Trading halted on NFLX: NFLX velocity halt: 6.3% move in 60s (threshold 5.0%) | {'symbol': 'NFLX', 'reason': 'NFLX velocity halt: 6.3% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.0772061, 'halt_num': 2}
+t01103  WARNING team.common  HALT NFLX until tick 1403
+t01140  WARNING exchange.server HALT TSLA — TSLA velocity halt: 5.7% move in 60s (threshold 5.0%) (halt #1)
+t01140  INFO    team.trader  Event: TRADING_HALT | Trading halted on TSLA: TSLA velocity halt: 5.7% move in 60s (threshold 5.0%) | {'symbol': 'TSLA', 'reason': 'TSLA velocity halt: 5.7% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.112926, 'halt_num': 1}
+t01140  WARNING team.common  HALT TSLA until tick 1440
+t01140  INFO    team.trader  Event: TRADING_HALT | Trading halted on TSLA: TSLA velocity halt: 5.7% move in 60s (threshold 5.0%) | {'symbol': 'TSLA', 'reason': 'TSLA velocity halt: 5.7% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.112926, 'halt_num': 1}
+t01140  WARNING team.common  HALT TSLA until tick 1440
+t01140  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on VLTA | {'symbol': 'VLTA'}
+t01140  INFO    team.trader  RESUMED VLTA — re-entering only once the book settles
+t01140  INFO    team.risk    RESUME VLTA: no new exposure for 3 ticks, then only into a two-sided book
+t01140  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on VLTA | {'symbol': 'VLTA'}
+t01140  INFO    team.trader  RESUMED VLTA — re-entering only once the book settles
+t01140  INFO    team.risk    RESUME VLTA: no new exposure for 3 ticks, then only into a two-sided book
+t01145  WARNING exchange.server HALT VLTA — VLTA velocity halt: 6.0% move in 60s (threshold 5.0%) (halt #3)
+t01145  INFO    team.trader  Event: TRADING_HALT | Trading halted on VLTA: VLTA velocity halt: 6.0% move in 60s (threshold 5.0%) | {'symbol': 'VLTA', 'reason': 'VLTA velocity halt: 6.0% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.1184871, 'halt_num': 3}
+t01145  WARNING team.common  HALT VLTA until tick 1445
+t01145  INFO    team.trader  Event: TRADING_HALT | Trading halted on VLTA: VLTA velocity halt: 6.0% move in 60s (threshold 5.0%) | {'symbol': 'VLTA', 'reason': 'VLTA velocity halt: 6.0% move in 60s (threshold 5.0%)', 'duration': 300, 'resume_at': 1794943588.1184871, 'halt_num': 3}
+t01145  WARNING team.common  HALT VLTA until tick 1445
+t01400  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on AAPL | {'symbol': 'AAPL'}
+t01400  INFO    team.trader  RESUMED AAPL — re-entering only once the book settles
+t01400  INFO    team.risk    RESUME AAPL: no new exposure for 3 ticks, then only into a two-sided book
+t01400  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on AAPL | {'symbol': 'AAPL'}
+t01400  INFO    team.trader  RESUMED AAPL — re-entering only once the book settles
+t01400  INFO    team.risk    RESUME AAPL: no new exposure for 3 ticks, then only into a two-sided book
+t01400  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on NVDA | {'symbol': 'NVDA'}
+t01400  INFO    team.trader  RESUMED NVDA — re-entering only once the book settles
+t01400  INFO    team.risk    RESUME NVDA: no new exposure for 3 ticks, then only into a two-sided book
+t01400  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on NVDA | {'symbol': 'NVDA'}
+t01400  INFO    team.trader  RESUMED NVDA — re-entering only once the book settles
+t01400  INFO    team.risk    RESUME NVDA: no new exposure for 3 ticks, then only into a two-sided book
+t01401  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on MSFT | {'symbol': 'MSFT'}
+t01401  INFO    team.trader  RESUMED MSFT — re-entering only once the book settles
+t01401  INFO    team.risk    RESUME MSFT: no new exposure for 3 ticks, then only into a two-sided book
+t01401  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on MSFT | {'symbol': 'MSFT'}
+t01401  INFO    team.trader  RESUMED MSFT — re-entering only once the book settles
+t01401  INFO    team.risk    RESUME MSFT: no new exposure for 3 ticks, then only into a two-sided book
+t01401  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on GOOGL | {'symbol': 'GOOGL'}
+t01401  INFO    team.trader  RESUMED GOOGL — re-entering only once the book settles
+t01401  INFO    team.risk    RESUME GOOGL: no new exposure for 3 ticks, then only into a two-sided book
+t01401  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on GOOGL | {'symbol': 'GOOGL'}
+t01401  INFO    team.trader  RESUMED GOOGL — re-entering only once the book settles
+t01401  INFO    team.risk    RESUME GOOGL: no new exposure for 3 ticks, then only into a two-sided book
+t01402  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on AMZN | {'symbol': 'AMZN'}
+t01402  INFO    team.trader  RESUMED AMZN — re-entering only once the book settles
+t01402  INFO    team.risk    RESUME AMZN: no new exposure for 3 ticks, then only into a two-sided book
+t01402  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on AMZN | {'symbol': 'AMZN'}
+t01402  INFO    team.trader  RESUMED AMZN — re-entering only once the book settles
+t01402  INFO    team.risk    RESUME AMZN: no new exposure for 3 ticks, then only into a two-sided book
+t01403  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on META | {'symbol': 'META'}
+t01403  INFO    team.trader  RESUMED META — re-entering only once the book settles
+t01403  INFO    team.risk    RESUME META: no new exposure for 3 ticks, then only into a two-sided book
+t01403  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on META | {'symbol': 'META'}
+t01403  INFO    team.trader  RESUMED META — re-entering only once the book settles
+t01403  INFO    team.risk    RESUME META: no new exposure for 3 ticks, then only into a two-sided book
+t01403  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on NFLX | {'symbol': 'NFLX'}
+t01403  INFO    team.trader  RESUMED NFLX — re-entering only once the book settles
+t01403  INFO    team.risk    RESUME NFLX: no new exposure for 3 ticks, then only into a two-sided book
+t01403  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on NFLX | {'symbol': 'NFLX'}
+t01403  INFO    team.trader  RESUMED NFLX — re-entering only once the book settles
+t01403  INFO    team.risk    RESUME NFLX: no new exposure for 3 ticks, then only into a two-sided book
+t01406  WARNING team.trader  POSITION STOP: sell 20 GOOGL @ 161.29
+t01406  INFO    team.trader  Gate: closing order sell GOOGL 20 passed the risk layer
+t01440  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on TSLA | {'symbol': 'TSLA'}
+t01440  INFO    team.trader  RESUMED TSLA — re-entering only once the book settles
+t01440  INFO    team.risk    RESUME TSLA: no new exposure for 3 ticks, then only into a two-sided book
+t01440  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on TSLA | {'symbol': 'TSLA'}
+t01440  INFO    team.trader  RESUMED TSLA — re-entering only once the book settles
+t01440  INFO    team.risk    RESUME TSLA: no new exposure for 3 ticks, then only into a two-sided book
+t01445  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on VLTA | {'symbol': 'VLTA'}
+t01445  INFO    team.trader  RESUMED VLTA — re-entering only once the book settles
+t01445  INFO    team.risk    RESUME VLTA: no new exposure for 3 ticks, then only into a two-sided book
+t01445  INFO    team.trader  Event: TRADING_RESUMED | Trading resumed on VLTA | {'symbol': 'VLTA'}
+t01445  INFO    team.trader  RESUMED VLTA — re-entering only once the book settles
+t01445  INFO    team.risk    RESUME VLTA: no new exposure for 3 ticks, then only into a two-sided book
+t01451  INFO    team.trader  Gate blocked buy 5 VLTA: risk: book not two-sided since the resume
+t01452  INFO    team.trader  Gate blocked buy 5 VLTA: risk: book not two-sided since the resume
+t01453  INFO    team.trader  Gate blocked buy 5 VLTA: risk: book not two-sided since the resume
+t01454  INFO    team.trader  Probe VLTA: no fill after 3 tries — dropping it
+t01455  INFO    team.trader  Probe: round trip of 5 VLTA
+t01458  INFO    team.trader  Gate blocked buy 5 VLTA: risk: book not two-sided since the resume
+t01459  INFO    team.trader  Gate blocked buy 5 VLTA: risk: book not two-sided since the resume
+t01460  INFO    team.trader  Gate blocked buy 5 VLTA: risk: book not two-sided since the resume
+t01461  INFO    team.trader  Probe VLTA: no fill after 3 tries — dropping it
+t01462  INFO    team.trader  Probe: round trip of 5 AAPL
+t01465  INFO    team.risk    RESUME AAPL: book settled (50 bps) — re-entering
+t01476  INFO    team.trader  Probe: round trip of 5 NVDA
+t01479  INFO    team.risk    RESUME NVDA: book settled (50 bps) — re-entering
+t01490  INFO    team.trader  Probe: round trip of 5 MSFT
+t01493  INFO    team.risk    RESUME MSFT: book settled (50 bps) — re-entering
+t01504  INFO    team.trader  Probe: round trip of 5 GOOGL
+t01507  INFO    team.risk    RESUME GOOGL: book settled (50 bps) — re-entering
+t01518  INFO    team.trader  Probe: round trip of 5 AMZN
+t01521  INFO    team.risk    RESUME AMZN: book settled (50 bps) — re-entering
+t01532  INFO    team.trader  Probe: round trip of 5 META
+t01535  INFO    team.risk    RESUME META: book settled (50 bps) — re-entering
+t01546  INFO    team.trader  Probe: round trip of 5 NFLX
+t01549  INFO    team.risk    RESUME NFLX: book settled (50 bps) — re-entering
+t01587  INFO    team.trader  Probe: round trip of 5 TSLA
+t01590  INFO    team.risk    RESUME TSLA: book settled (50 bps) — re-entering
+t02031  INFO    team.trader  Listing exit VLTA: sell 303 (offer=32.00 high=46.05 mark=42.47)
+t02031  INFO    team.risk    RESUME VLTA: book settled (52 bps) — re-entering
+t02056  INFO    team.trader  Listing exit VLTA: sell 299 (offer=32.00 high=46.05 mark=42.53)
+t02066  INFO    team.trader  Listing exit VLTA: sell 274 (offer=32.00 high=46.05 mark=42.49)

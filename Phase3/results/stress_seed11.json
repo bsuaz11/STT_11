@@ -1,0 +1,115 @@
+{
+  "seed": 11,
+  "limits": "real",
+  "ticks": 2100,
+  "crashes": 0,
+  "shocks": [
+    "AMD \u22129% (unscheduled)",
+    "NFLX +7% (unscheduled)",
+    "MARKET \u22126% (unscheduled)"
+  ],
+  "halts": [
+    [
+      180,
+      "AMD"
+    ],
+    [
+      269,
+      "INTC"
+    ],
+    [
+      420,
+      "NFLX"
+    ],
+    [
+      620,
+      "MSFT"
+    ],
+    [
+      1100,
+      "AAPL"
+    ],
+    [
+      1100,
+      "AMZN"
+    ],
+    [
+      1100,
+      "TSLA"
+    ],
+    [
+      1100,
+      "VLTA"
+    ],
+    [
+      1101,
+      "MARKET"
+    ],
+    [
+      2002,
+      "MARKET"
+    ]
+  ],
+  "manual_kill": {
+    "seat": "stt_11_trader_2",
+    "on": 700,
+    "off": 760
+  },
+  "seats": {
+    "stt_11_trader_1": {
+      "pnl": -3224.54,
+      "liquidated": false,
+      "orders": 21,
+      "rejects": {},
+      "orders_into_halted_symbol": 0,
+      "max_abs_position": 400,
+      "peak_gross_x_equity": 0.453,
+      "peak_net_x_equity": 0.453,
+      "orders_cut_by_risk": 5,
+      "kill_switch_history": [],
+      "session_soft_stop": true,
+      "session_hard_stop": false,
+      "final_positions": {
+        "MSFT": 20,
+        "NVDA": 20,
+        "TSLA": 20,
+        "AMZN": 20,
+        "GOOGL": 20,
+        "META": 20,
+        "NFLX": 20,
+        "VLTA": 400
+      },
+      "reject_messages": []
+    },
+    "stt_11_trader_2": {
+      "pnl": 242.38,
+      "liquidated": false,
+      "orders": 20,
+      "rejects": {},
+      "orders_into_halted_symbol": 0,
+      "max_abs_position": 400,
+      "peak_gross_x_equity": 0.43,
+      "peak_net_x_equity": 0.43,
+      "orders_cut_by_risk": 3,
+      "kill_switch_history": [
+        [
+          701.0,
+          "trip",
+          "manual"
+        ],
+        [
+          761.0,
+          "release",
+          "manual"
+        ]
+      ],
+      "session_soft_stop": false,
+      "session_hard_stop": false,
+      "final_positions": {
+        "MSFT": 20,
+        "VLTA": 375
+      },
+      "reject_messages": []
+    }
+  }
+}

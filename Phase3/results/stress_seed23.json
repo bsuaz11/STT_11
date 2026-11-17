@@ -1,0 +1,126 @@
+{
+  "seed": 23,
+  "limits": "real",
+  "ticks": 2100,
+  "crashes": 0,
+  "shocks": [
+    "AMD \u22129% (unscheduled)",
+    "NFLX +7% (unscheduled)",
+    "MARKET \u22126% (unscheduled)"
+  ],
+  "halts": [
+    [
+      180,
+      "AMD"
+    ],
+    [
+      275,
+      "INTC"
+    ],
+    [
+      420,
+      "NFLX"
+    ],
+    [
+      535,
+      "VLTA"
+    ],
+    [
+      840,
+      "VLTA"
+    ],
+    [
+      1100,
+      "AAPL"
+    ],
+    [
+      1100,
+      "NVDA"
+    ],
+    [
+      1101,
+      "GOOGL"
+    ],
+    [
+      1101,
+      "MSFT"
+    ],
+    [
+      1102,
+      "AMZN"
+    ],
+    [
+      1103,
+      "META"
+    ],
+    [
+      1103,
+      "NFLX"
+    ],
+    [
+      1140,
+      "TSLA"
+    ],
+    [
+      1145,
+      "VLTA"
+    ]
+  ],
+  "manual_kill": {
+    "seat": "stt_11_trader_2",
+    "on": 700,
+    "off": 760
+  },
+  "seats": {
+    "stt_11_trader_1": {
+      "pnl": 358.54,
+      "liquidated": false,
+      "orders": 44,
+      "rejects": {},
+      "orders_into_halted_symbol": 0,
+      "max_abs_position": 303,
+      "peak_gross_x_equity": 0.452,
+      "peak_net_x_equity": 0.452,
+      "orders_cut_by_risk": 7,
+      "kill_switch_history": [],
+      "session_soft_stop": false,
+      "session_hard_stop": false,
+      "final_positions": {
+        "NVDA": 20,
+        "NFLX": 20,
+        "INTC": 20,
+        "VLTA": 249
+      },
+      "reject_messages": []
+    },
+    "stt_11_trader_2": {
+      "pnl": 4685.83,
+      "liquidated": false,
+      "orders": 22,
+      "rejects": {},
+      "orders_into_halted_symbol": 0,
+      "max_abs_position": 303,
+      "peak_gross_x_equity": 0.43,
+      "peak_net_x_equity": 0.43,
+      "orders_cut_by_risk": 2,
+      "kill_switch_history": [
+        [
+          701.0,
+          "trip",
+          "manual"
+        ],
+        [
+          761.0,
+          "release",
+          "manual"
+        ]
+      ],
+      "session_soft_stop": false,
+      "session_hard_stop": false,
+      "final_positions": {
+        "VLTA": 303
+      },
+      "reject_messages": []
+    }
+  }
+}

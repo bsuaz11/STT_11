@@ -1,0 +1,136 @@
+{
+  "seed": 31,
+  "limits": "real",
+  "ticks": 2100,
+  "crashes": 0,
+  "shocks": [
+    "AMD \u22129% (unscheduled)",
+    "NFLX +7% (unscheduled)",
+    "MARKET \u22126% (unscheduled)"
+  ],
+  "halts": [
+    [
+      180,
+      "AMD"
+    ],
+    [
+      273,
+      "INTC"
+    ],
+    [
+      420,
+      "NFLX"
+    ],
+    [
+      622,
+      "MSFT"
+    ],
+    [
+      1100,
+      "AAPL"
+    ],
+    [
+      1101,
+      "AMZN"
+    ],
+    [
+      1101,
+      "GOOGL"
+    ],
+    [
+      1102,
+      "VLTA"
+    ],
+    [
+      1110,
+      "META"
+    ],
+    [
+      1110,
+      "NVDA"
+    ],
+    [
+      1123,
+      "AMD"
+    ],
+    [
+      1135,
+      "NFLX"
+    ],
+    [
+      1140,
+      "MSFT"
+    ],
+    [
+      1140,
+      "TSLA"
+    ],
+    [
+      1159,
+      "INTC"
+    ]
+  ],
+  "manual_kill": {
+    "seat": "stt_11_trader_2",
+    "on": 700,
+    "off": 760
+  },
+  "seats": {
+    "stt_11_trader_1": {
+      "pnl": -1765.51,
+      "liquidated": false,
+      "orders": 34,
+      "rejects": {},
+      "orders_into_halted_symbol": 0,
+      "max_abs_position": 400,
+      "peak_gross_x_equity": 0.484,
+      "peak_net_x_equity": 0.484,
+      "orders_cut_by_risk": 12,
+      "kill_switch_history": [],
+      "session_soft_stop": false,
+      "session_hard_stop": false,
+      "final_positions": {
+        "AAPL": 5,
+        "MSFT": 20,
+        "NVDA": 20,
+        "TSLA": 20,
+        "GOOGL": 20,
+        "META": 20,
+        "NFLX": 20,
+        "INTC": 20,
+        "VLTA": 375
+      },
+      "reject_messages": []
+    },
+    "stt_11_trader_2": {
+      "pnl": 216.88,
+      "liquidated": false,
+      "orders": 12,
+      "rejects": {},
+      "orders_into_halted_symbol": 0,
+      "max_abs_position": 400,
+      "peak_gross_x_equity": 0.427,
+      "peak_net_x_equity": 0.427,
+      "orders_cut_by_risk": 4,
+      "kill_switch_history": [
+        [
+          701.0,
+          "trip",
+          "manual"
+        ],
+        [
+          761.0,
+          "release",
+          "manual"
+        ]
+      ],
+      "session_soft_stop": false,
+      "session_hard_stop": false,
+      "final_positions": {
+        "MSFT": 20,
+        "VLTA": 400
+      },
+      "reject_messages": []
+    }
+  }
+}
