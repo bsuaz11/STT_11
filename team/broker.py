@@ -6,6 +6,11 @@ passive fill. Three decisions, three methods — override any of them.
 Inventory management (skew) is the key to staying solvent: the exchange
 charges margin interest and liquidates teams below maintenance.
 
+Risk (Phase 3, team/risk.py): every PlaceOrder passes _guard(), which asks
+the RiskManager for the kill switch, the session and position stops and the
+notional caps; requote_loop() runs the stops once a pass and turns a trip
+into pulled quotes and closing IOCs.
+
 Run:
     TEAM_ID=stt_11_broker_1 python -m team.broker
 """
@@ -37,6 +42,7 @@ from team.common import (
     single_instance,
 )
 from team.config import CAPITAL
+from team.risk import BROKER_LIMITS, RiskManager
 
 if TYPE_CHECKING:
     from shared.messages import (
@@ -294,6 +300,11 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         self._maint = MAINTENANCE_FRACTION
         self._start_equity: float | None = None   # set from the first leaderboard
         self._risk_off = False
+        self.risk = RiskManager(_broker_config.TEAM_ID, BROKER_LIMITS,
+                                float(CAPITAL.get(_broker_config.TEAM_ID, 100_000.0)))
+        self._kill_pulled = False               # quotes already pulled for this trip
+        self._closing_msg: PlaceOrder | None = None   # the IOC a stop wants out
+        self._last_risk_log = 0.0
 
     # ── Event schedule ──────────────────────────────────────────────────
     def _event_phase(self, sym: str) -> tuple[str | None, dict | None]:
@@ -317,6 +328,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
 
     # ── Halts ───────────────────────────────────────────────────────────
     def _resume(self, sym: str) -> None:
+        self.risk.on_resume(sym, self._clock.now())
         self._paused[sym] = time.monotonic() + RESUME_SETTLE_SEC
         self.state.last_quote_prices.pop(sym, None)   # requote from scratch
         logger.info("RESUMED %s — quoting again in %ds", sym, RESUME_SETTLE_SEC)
@@ -354,6 +366,58 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             await self._send(PlaceOrder(
                 team_id=_broker_config.TEAM_ID, symbol=sym, side=side,
                 order_type="ioc", price=px, quantity=min(abs(pos), 500)))
+
+    # ── Risk: stops and the kill switch ─────────────────────────────────
+    def _equity(self) -> float | None:
+        """Cash plus inventory at the venue mark, or None before a portfolio."""
+        if self._cash_est is None:
+            return None
+        marks = self.state.exchange_prices
+        return self._cash_est + sum(q * marks.get(s, 0.0)
+                                    for s, q in self.state.positions.items() if q)
+
+    async def _close(self, sym: str, why: str) -> None:
+        """Pull sym's quotes and IOC out of its inventory (retried each
+        FLATTEN_RETRY_SEC until flat). Halted symbols wait for the resume."""
+        pos = self.state.positions.get(sym, 0)
+        now = time.monotonic()
+        centre = self.quote_centre(sym)
+        if (not pos or not centre or self._halts.is_halted(sym)
+                or now < self._flatten_retry.get(sym, 0.0)):
+            return
+        self._flatten_retry[sym] = now + FLATTEN_RETRY_SEC
+        if sym in self.state.last_quote_prices:
+            await self.cancel_quotes(sym)
+        side = "sell" if pos > 0 else "buy"
+        slip = FLATTEN_SLIP_BPS / 1e4
+        px = round(centre * (1 - slip if side == "sell" else 1 + slip), 2)
+        logger.warning("%s: %s %d %s @ %.2f", why, side, abs(pos), sym, px)
+        self._closing_msg = PlaceOrder(team_id=_broker_config.TEAM_ID, symbol=sym, side=side,
+                                       order_type="ioc", price=px, quantity=min(abs(pos), 500))
+        await self._send(self._closing_msg)
+
+    async def _run_risk(self) -> bool:
+        """Run the stops. True when the kill switch is on (quote nothing)."""
+        d = self.risk.update(self._clock.now(), self._equity(), self.state.positions,
+                             self.state.exchange_prices)
+        if d.kill:
+            if not self._kill_pulled:
+                logger.error("KILL SWITCH [%s] — pulling every quote%s",
+                             ",".join(self.risk.kill.reasons()),
+                             " and flattening" if d.flatten_all else "")
+                await self.cancel_all_quotes()
+                self._kill_pulled = True
+            if d.flatten_all:
+                for sym, q in list(self.state.positions.items()):
+                    if q:
+                        await self._close(sym, "KILL SWITCH flatten")
+            return True
+        if self._kill_pulled:
+            logger.warning("Kill switch released — quoting again")
+            self._kill_pulled = False
+        for sym in d.flatten:                   # per-position stop
+            await self._close(sym, "POSITION STOP")
+        return False
 
     # ── Toxic flow ──────────────────────────────────────────────────────
     def _mark_out(self) -> None:
@@ -406,6 +470,20 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 or sym not in self.state.exchange_prices or self._halts.is_halted(sym)
                 or sym in self._skip or time.monotonic() < self._paused.get(sym, 0)):
             return None
+        closing = msg is self._closing_msg
+        self._closing_msg = None
+        allowed, why = self.risk.check(
+            sym, msg.side, qty, msg.price, self._clock.now(), self.state.positions,
+            self.state.exchange_prices, self._equity(), closing=closing, book_known=False)
+        if allowed < qty:
+            now = time.monotonic()
+            if now - self._last_risk_log > 10:  # quotes retry every pass: log sparingly
+                self._last_risk_log = now
+                logger.info("Risk: %s %s %d -> %d (%s)", msg.side, sym, qty, allowed, why)
+            if allowed <= 0:
+                self.blocked += 1
+                return None
+            qty = allowed
         pos = self.state.positions.get(sym, 0)
         max_long, max_short = self._caps(sym)
         if self._event_phase(sym)[0] and msg.order_type != "ioc":
@@ -436,6 +514,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             msg = self._guard(msg)
             if msg is None:
                 return
+            self.risk.on_send(self._clock.now())
             self._orders[self._next_key] = {
                 "sym": msg.symbol, "side": msg.side, "px": round(msg.price, 2),
                 "rem": msg.quantity, "oid": None,
@@ -478,6 +557,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         side = "buy" if msg.buyer_id == me else "sell" if msg.seller_id == me else None
         if side is None:
             return
+        self.risk.on_fill(msg.symbol, side, msg.quantity, msg.price)
         cpty = msg.seller_id if side == "buy" else msg.buyer_id
         if msg.maker_id == me and not cpty.startswith(OWN_TEAM_PREFIX):
             self._markouts_due.append((time.monotonic(), cpty, msg.symbol, side, msg.price))
@@ -516,8 +596,10 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         """Connect, then tap the socket for rejects."""
         await super().connect_to_exchange()
         self._ws = _RejectTap(self._ws, self)
+        self.risk.on_connect(self._clock.now())
 
     def _on_reject(self, code: str | None, message: str | None) -> None:
+        self.risk.on_reject(code, self._clock.now())
         if code == "RATE_LIMITED":
             self.rate_limited += 1
             self._backoff_until = time.monotonic() + RATE_LIMIT_BACKOFF_SEC
@@ -558,6 +640,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         super()._on_leaderboard(msg)
         self._short_interest = short_interest(msg)
         self._clock.note(getattr(msg, "tick", None))
+        self.risk.on_data(self._clock.now())
         me = next((e for e in msg.brokers if e.get("team_id") == _broker_config.TEAM_ID), None)
         if me and "net_worth" in me:
             if self._start_equity is None:
@@ -615,6 +698,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 self._events.clear()
                 self._halts.clear()
                 self._start_equity = None
+                self.risk.new_session(self._clock.now())
             logger.info("Session rules: shorts=%s (up to %d per symbol), locate cap %d, "
                         "venue quota %s/tick → broker budget %d/s",
                         self._shorts_ok, BROKER_MAX_SHORT, self._locate_cap,
@@ -623,6 +707,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             # The graded block starts here: count its messages and fees alone.
             self._maybe_log_stats(force=True)
             self.msgs = self.cancels = self.rate_limited = self.not_found = self.flashes = 0
+            self.risk.new_session(self._clock.now())  # open-play losses don't count
             quota = data.get("order_quota")
             if quota:
                 self._budget = min(MESSAGE_BUDGET, max(2, int(quota) - TRADER_RESERVE))
@@ -744,6 +829,12 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 continue
             for sym in self._halts.expired():
                 self._resume(sym)
+            try:
+                if await self._run_risk():
+                    continue                    # kill switch: no quotes this pass
+            except Exception:
+                logger.exception("risk pass failed — quoting nothing this pass")
+                continue
             self._mark_out()
             # Shrink-only quoting before a print: skew the reducing side to the centre.
             self._owner._reducing = {s for s in self._quote_symbols

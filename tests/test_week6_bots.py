@@ -222,10 +222,13 @@ def test_halted_symbol_gets_no_orders_then_activity_resumes():
     t.on_event("TRADING_HALT", "halted", {"symbol": "AMD", "duration": 300})
     assert t.gate(buy(), m, t.portfolio) is None
     t.clock.note(350)
+    t.on_book("AMD", 165.0)                         # the venue feed runs through a halt
     t.on_event("TRADING_RESUMED", "resumed", {"symbol": "AMD"})
-    assert t.gate(buy(qty=5), m, t.portfolio) is not None
+    assert t.gate(buy(qty=5), m, t.portfolio) is None   # Phase 3: no re-entry on the first tick
     assert "AMD" in t._probe_queue
     t.clock.note(354)                               # past the refill delay
+    t.on_book("AMD", 165.0)
+    assert t.gate(buy(qty=5), m, t.portfolio) is not None
     t.on_tick(m, t.portfolio)
     t.clock.note(358)
     order = t.on_tick(m, t.portfolio)
@@ -269,8 +272,10 @@ def test_print_uses_the_mark_from_before_it_and_holds_through_a_halt():
     t.on_fill("buy", "NFLX", order.quantity, 700.5)
     t.on_event("TRADING_HALT", "halted", {"symbol": "NFLX", "duration": 300})
     t.clock.note(200)
+    t.on_book("NFLX", 770.0)                        # the venue feed runs through a halt
     assert t.on_tick(FakeMarket(NFLX=(770.0, 771.0)), t.portfolio) is None
     t.clock.note(402)
+    t.on_book("NFLX", 770.0)
     t.on_event("TRADING_RESUMED", "resumed", {"symbol": "NFLX"})
     exit_order = t.on_tick(FakeMarket(NFLX=(770.0, 771.0)), t.portfolio)
     assert (exit_order.side, exit_order.quantity) == ("sell", order.quantity)
