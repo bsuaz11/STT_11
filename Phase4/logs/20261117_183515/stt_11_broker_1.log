@@ -1,0 +1,163 @@
+18:35:15  SUPERVISOR start stt_11_broker_1
+18:35:16  INFO      Quoting 5 venues: wss://feed.algoarena-st.duckdns.org, wss://feed-8767.algoarena-st.duckdns.org, wss://feed-8770.algoarena-st.duckdns.org, wss://feed-8773.algoarena-st.duckdns.org, wss://feed-8769.algoarena-st.duckdns.org
+
+╔══════════════════════════════════════════════╗
+║         AlgoArena — Broker Bot               ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_broker_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Symbols:  AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, NFLX, AMD, INTC║
+║  Spread:   $0.30  Qty: 20                       ║
+║  Feed:     Yahoo Finance (every 5s)             ║
+╚══════════════════════════════════════════════╝
+
+18:35:16  INFO      Yahoo Finance feed started for ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'INTC'] (every 5 s)
+18:35:16  INFO      Connecting to wss://feed.algoarena-st.duckdns.org (EXCHANGE_URL from the shell)
+
+╔══════════════════════════════════════════════╗
+║         AlgoArena — Broker Bot               ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_broker_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Symbols:  AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, NFLX, AMD, INTC║
+║  Spread:   $0.30  Qty: 20                       ║
+║  Feed:     Yahoo Finance (every 5s)             ║
+╚══════════════════════════════════════════════╝
+
+18:35:16  INFO      Connecting to wss://feed-8767.algoarena-st.duckdns.org (caller-supplied URL)
+
+╔══════════════════════════════════════════════╗
+║         AlgoArena — Broker Bot               ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_broker_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Symbols:  AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, NFLX, AMD, INTC║
+║  Spread:   $0.30  Qty: 20                       ║
+║  Feed:     Yahoo Finance (every 5s)             ║
+╚══════════════════════════════════════════════╝
+
+18:35:16  INFO      Connecting to wss://feed-8770.algoarena-st.duckdns.org (caller-supplied URL)
+
+╔══════════════════════════════════════════════╗
+║         AlgoArena — Broker Bot               ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_broker_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Symbols:  AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, NFLX, AMD, INTC║
+║  Spread:   $0.30  Qty: 20                       ║
+║  Feed:     Yahoo Finance (every 5s)             ║
+╚══════════════════════════════════════════════╝
+
+18:35:16  INFO      Connecting to wss://feed-8773.algoarena-st.duckdns.org (caller-supplied URL)
+
+╔══════════════════════════════════════════════╗
+║         AlgoArena — Broker Bot               ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_broker_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Symbols:  AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, NFLX, AMD, INTC║
+║  Spread:   $0.30  Qty: 20                       ║
+║  Feed:     Yahoo Finance (every 5s)             ║
+╚══════════════════════════════════════════════╝
+
+18:35:16  INFO      Connecting to wss://feed-8769.algoarena-st.duckdns.org (caller-supplied URL)
+18:35:16  INFO      Connected to wss://feed-8767.algoarena-st.duckdns.org as stt_11_broker_1 (broker)
+18:35:16  INFO      Connected to wss://feed.algoarena-st.duckdns.org as stt_11_broker_1 (broker)
+18:35:16  INFO      Connected to wss://feed-8770.algoarena-st.duckdns.org as stt_11_broker_1 (broker)
+18:35:16  INFO      Connected to wss://feed-8773.algoarena-st.duckdns.org as stt_11_broker_1 (broker)
+18:35:16  INFO      Connected to wss://feed-8769.algoarena-st.duckdns.org as stt_11_broker_1 (broker)
+18:35:16  INFO      Leaderboard tick=1357989 | realized=0.00 fills=0 net_worth=75000.00
+18:35:16  INFO      Portfolio seeded from leaderboard: cash=75000.00 positions={}
+18:35:16  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 8.0 bps, maker rebate 5.0 bps
+18:35:16  INFO      Venue fees: taker 8.0 bps, rebate 5.0 bps → min half-spread 10 bps
+18:35:16  INFO      Session open — quoting begins
+18:35:16  INFO      Session rules: shorts=True (up to 150 per symbol), locate cap 2000, venue quota default (20)/tick → broker budget 5/s
+18:35:16  INFO      Leaderboard tick=1357987 | realized=0.00 fills=0 net_worth=75000.00
+18:35:16  INFO      Portfolio seeded from leaderboard: cash=75000.00 positions={}
+18:35:16  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 7.0 bps, maker rebate 5.0 bps
+18:35:16  INFO      Venue fees: taker 7.0 bps, rebate 5.0 bps → min half-spread 10 bps
+18:35:16  INFO      Session open — quoting begins
+18:35:16  INFO      Session rules: shorts=True (up to 150 per symbol), locate cap 2000, venue quota default (20)/tick → broker budget 5/s
+18:35:16  INFO      Leaderboard tick=1357729 | realized=0.00 fills=0 net_worth=75000.00
+18:35:16  INFO      Portfolio seeded from leaderboard: cash=75000.00 positions={}
+18:35:16  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 8.0 bps, maker rebate 6.0 bps
+18:35:16  INFO      Venue fees: taker 8.0 bps, rebate 6.0 bps → min half-spread 10 bps
+18:35:16  INFO      Session open — quoting begins
+18:35:16  INFO      Session rules: shorts=True (up to 150 per symbol), locate cap 2000, venue quota default (20)/tick → broker budget 5/s
+18:35:16  INFO      Leaderboard tick=1358067 | realized=0.00 fills=0 net_worth=75000.00
+18:35:16  INFO      Portfolio seeded from leaderboard: cash=75000.00 positions={}
+18:35:16  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 11.0 bps, maker rebate 7.0 bps
+18:35:16  INFO      Venue fees: taker 11.0 bps, rebate 7.0 bps → min half-spread 10 bps
+18:35:16  INFO      Session open — quoting begins
+18:35:16  INFO      Session rules: shorts=True (up to 150 per symbol), locate cap 2000, venue quota default (20)/tick → broker budget 5/s
+18:35:16  INFO      Leaderboard tick=2786858 | realized=37214.83 fills=0 net_worth=381103.39
+18:35:16  INFO      Portfolio seeded from leaderboard: cash=29310.71 positions={'AAPL': 40, 'MSFT': 154, 'NVDA': 154, 'TSLA': 143, 'AMZN': 101, 'GOOGL': 154, 'META': 129, 'NFLX': 100, 'AMD': 150, 'INTC': 158, 'ORCA': 70, 'VLTA': 106}
+18:35:16  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 400.0 bps, maker rebate -100.0 bps
+18:35:16  INFO      Venue fees: taker 400.0 bps, rebate -100.0 bps → STANDING ASIDE (makers pay)
+18:35:16  INFO      Session open — quoting begins
+18:35:16  INFO      Session rules: shorts=True (up to 150 per symbol), locate cap 2000, venue quota default (20)/tick → broker budget 5/s
+18:35:17  INFO      Session baseline equity 86215.17 (soft stop at 77215.17, hard at 71215.17)
+18:35:17  INFO      Quoted VLTA bid=39.3900 ask=39.5200 centre=39.4601 [venue]
+18:35:17  INFO      Quoted TSLA bid=210.8100 ask=211.4500 centre=211.1437 [venue]
+18:35:17  INFO      Session baseline equity 381046.05 (soft stop at 372046.05, hard at 366046.05)
+18:35:17  INFO      Session baseline equity 86044.71 (soft stop at 77044.71, hard at 71044.71)
+18:35:17  INFO      Quoted VLTA bid=39.9500 ask=40.0800 centre=40.0214 [venue]
+18:35:17  INFO      Quoted TSLA bid=208.2900 ask=208.9200 centre=208.6188 [venue]
+18:35:17  INFO      Fill: bought  1 VLTA @ 39.3600 (fee=0.0138, remaining=19)
+18:35:17  INFO      Session baseline equity 86296.99 (soft stop at 77296.99, hard at 71296.99)
+18:35:17  INFO      Quoted VLTA bid=39.9100 ask=40.0400 centre=39.9779 [venue]
+18:35:17  INFO      Quoted TSLA bid=204.8700 ask=205.5000 centre=205.1986 [venue]
+18:35:17  INFO      Session baseline equity 85995.38 (soft stop at 76995.38, hard at 70995.38)
+18:35:17  INFO      Quoted VLTA bid=37.9700 ask=38.0900 centre=38.0342 [venue]
+18:35:17  INFO      Quoted TSLA bid=217.9700 ask=218.6400 centre=218.3157 [venue]
+18:35:17  WARNING   Short rejected [SSR_RESTRICTED] TSLA — no new shorts there for now
+18:35:17  WARNING   Exchange error [SSR_RESTRICTED]: TSLA is under the short-sale rule (down 10% from open) — shorts must be limit orders priced above the best bid
+18:35:17  WARNING   Short rejected [SSR_RESTRICTED] TSLA — no new shorts there for now
+18:35:17  WARNING   Exchange error [SSR_RESTRICTED]: TSLA is under the short-sale rule (down 10% from open) — shorts must be limit orders priced above the best bid
+18:35:17  WARNING   Short rejected [SSR_RESTRICTED] TSLA — no new shorts there for now
+18:35:17  WARNING   Exchange error [SSR_RESTRICTED]: TSLA is under the short-sale rule (down 10% from open) — shorts must be limit orders priced above the best bid
+18:35:18  INFO      Quoted NVDA bid=143.5300 ask=143.9700 centre=143.7608 [venue+yahoo]
+18:35:18  INFO      Quoted NFLX bid=457.3600 ask=458.7600 centre=458.0886 [venue+yahoo]
+18:35:18  INFO      Quoted NVDA bid=143.1500 ask=143.5900 centre=143.3819 [venue+yahoo]
+18:35:18  INFO      Quoted NFLX bid=438.7100 ask=440.0400 centre=439.4011 [venue+yahoo]
+18:35:18  INFO      Quoted NVDA bid=143.2000 ask=143.6400 centre=143.4258 [venue+yahoo]
+18:35:18  INFO      Quoted NFLX bid=509.6400 ask=511.1900 centre=510.4489 [venue+yahoo]
+18:35:18  INFO      Quoted NVDA bid=138.4600 ask=138.8800 centre=138.6802 [venue+yahoo]
+18:35:18  INFO      Quoted NFLX bid=489.1800 ask=490.6700 centre=489.9551 [venue+yahoo]
+18:35:20  INFO      Quoted MSFT bid=425.7200 ask=427.0000 centre=426.3866 [venue+yahoo]
+18:35:20  INFO      Quoted META bid=737.7500 ask=739.9800 centre=738.9080 [venue+yahoo]
+18:35:20  INFO      Quoted MSFT bid=418.1300 ask=419.3900 centre=418.7839 [venue+yahoo]
+18:35:20  INFO      Quoted META bid=729.8200 ask=732.0200 centre=730.9655 [venue+yahoo]
+18:35:20  INFO      Quoted MSFT bid=418.7300 ask=420.0000 centre=419.3931 [venue+yahoo]
+18:35:20  INFO      Quoted META bid=723.5700 ask=725.7500 centre=724.7045 [venue+yahoo]
+18:35:20  INFO      Quoted MSFT bid=410.7100 ask=411.9500 centre=411.3522 [venue+yahoo]
+18:35:20  INFO      Quoted META bid=712.0400 ask=714.1900 centre=713.1590 [venue+yahoo]
+18:35:21  INFO      Quoted INTC bid=29.1700 ask=29.2600 centre=29.2161 [venue+yahoo]
+18:35:21  INFO      Quoted GOOGL bid=164.9900 ask=165.4900 centre=165.2529 [venue+yahoo]
+18:35:21  INFO      Quoted INTC bid=31.7300 ask=31.8400 centre=31.7887 [venue+yahoo]
+18:35:21  INFO      Quoted GOOGL bid=164.3000 ask=164.8100 centre=164.5646 [venue+yahoo]
+18:35:21  INFO      Quoted INTC bid=29.1200 ask=29.2200 centre=29.1732 [venue+yahoo]
+18:35:21  INFO      Quoted GOOGL bid=170.8200 ask=171.3400 centre=171.0907 [venue+yahoo]
+18:35:21  INFO      Quoted INTC bid=26.6900 ask=26.7800 centre=26.7399 [venue+yahoo]
+18:35:21  INFO      Quoted GOOGL bid=166.8400 ask=167.3400 centre=167.0998 [venue+yahoo]
+18:35:23  INFO      Quoted AMZN bid=203.2500 ask=203.8700 centre=203.5686 [venue+yahoo]
+18:35:23  INFO      Quoted AMD bid=173.4900 ask=174.0100 centre=173.7595 [venue+yahoo]
+18:35:23  INFO      Quoted AMZN bid=200.1400 ask=200.7500 centre=200.4565 [venue+yahoo]
+18:35:23  INFO      Quoted AMD bid=165.1100 ask=165.6100 centre=165.3730 [venue+yahoo]
+18:35:23  INFO      Quoted AMZN bid=197.7900 ask=198.3900 centre=198.1023 [venue+yahoo]
+18:35:23  INFO      Quoted AMD bid=173.8900 ask=174.4100 centre=174.1621 [venue+yahoo]
+18:35:23  INFO      Quoted AMZN bid=191.8800 ask=192.4700 centre=192.1853 [venue+yahoo]
+18:35:23  INFO      Quoted AMD bid=156.9000 ask=157.3800 centre=157.1485 [venue+yahoo]
+18:35:24  INFO      Quoted AAPL bid=215.8700 ask=216.5200 centre=216.2100 [venue+yahoo]
+18:35:24  INFO      Quoted TSLA bid=212.0300 ask=212.6800 centre=212.3682 [venue+yahoo]
+18:35:24  INFO      Quoted AAPL bid=219.7700 ask=220.4400 centre=220.1164 [venue+yahoo]
+18:35:24  INFO      Quoted TSLA bid=209.5600 ask=210.2000 centre=209.8936 [venue+yahoo]
+18:35:24  INFO      Quoted AAPL bid=209.8000 ask=210.4300 centre=210.1265 [venue+yahoo]
+18:35:24  INFO      Quoted TSLA bid=206.2400 ask=206.8600 centre=206.5602 [venue+yahoo]
+18:35:24  INFO      Quoted AAPL bid=198.1100 ask=198.7100 centre=198.4256 [venue+yahoo]
+18:35:26  INFO      Quoted VLTA bid=39.4800 ask=39.6000 centre=39.5424 [venue]
+18:35:26  INFO      Quoted TSLA bid=218.2500 ask=218.9100 centre=218.5892 [venue+yahoo]
+18:35:27  INFO      Quoted VLTA bid=39.5400 ask=39.6700 centre=39.6050 [venue]
+18:35:27  INFO      Quoted TSLA bid=209.7400 ask=210.3800 centre=210.0725 [venue+yahoo]
+18:35:27  INFO      Quoted TSLA bid=218.4800 ask=219.1400 centre=218.8246 [venue+yahoo]
+18:35:28  INFO      Quoted TSLA bid=206.4200 ask=207.0500 centre=206.7473 [venue+yahoo]

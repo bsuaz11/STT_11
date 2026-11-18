@@ -1,0 +1,83 @@
+18:20:48  INFO      Venues: primary ws://localhost:9101 + 9102 (ws://localhost:9102)
+18:20:48  INFO      Venue 9102 connected (ws://localhost:9102)
+18:20:48  INFO      Venue 9102 fees: taker 8.0 bps, rebate 5.0 bps
+18:20:48  INFO      Session baseline equity 158168.04 (soft stop at 155168.04, hard at 153168.04)
+18:21:26  INFO      LEADLAG marker TSLA +4.8 bps → MSFT sell (echo 1.9 bps in 5 ticks): sell 1 MSFT @ 418.48
+18:21:26  INFO      Order: IOC sell 1 MSFT @ 418.48 on 9102 (reduce sell MSFT: 9102 419.11 + 8 bps = 418.7747)
+18:21:26  INFO      Fill on 9102: sell 1 MSFT @ 419.11
+18:21:26  INFO      LEADLAG fill: sell 1 MSFT @ 419.11
+18:21:36  INFO      LEADLAG exit marker TSLA→MSFT: buy 1 MSFT @ 420.40
+18:21:36  INFO      Order: IOC buy 1 MSFT @ 420.26 on 9102 (open buy MSFT: 9102 419.42 + 8 bps = 419.7555)
+18:21:36  INFO      Fill on 9102: buy 1 MSFT @ 419.42
+18:21:36  INFO      LEADLAG fill: buy 1 MSFT @ 419.42
+18:21:37  INFO      LEADLAG closed TSLA→MSFT sell (marker): cash -0.31, 1 entries, left +0
+18:21:49  INFO      STATS quota: 2 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1427 msgs (23/s), per-message handling p50≤100µs p99≤2000µs max=1844µs | flashes seen 0, acted on 0, filled 0 | leadlag: 1 triggers acted on (0 ramp), 1 closed, flat-trade cash -0.31 | venues: primary 0 orders (200 bps), 9102 2 orders (8 bps)
+18:22:16  INFO      LEADLAG marker AMD +4.1 bps → META sell (echo 1.3 bps in 4 ticks): sell 1 META @ 581.34
+18:22:16  INFO      Order: IOC sell 1 META @ 581.34 on 9102 (reduce sell META: 9102 582.21 + 8 bps = 581.7442)
+18:22:16  INFO      Fill on 9102: sell 1 META @ 582.21
+18:22:16  INFO      LEADLAG fill: sell 1 META @ 582.21
+18:22:37  INFO      LEADLAG exit marker AMD→META: buy 1 META @ 583.03
+18:22:37  INFO      Order: IOC buy 1 META @ 582.74 on 9102 (open buy META: 9102 581.58 + 8 bps = 582.0453)
+18:22:37  INFO      Fill on 9102: buy 1 META @ 581.58
+18:22:37  INFO      LEADLAG fill: buy 1 META @ 581.58
+18:22:38  INFO      LEADLAG closed AMD→META sell (marker): cash +0.63, 1 entries, left +0
+18:22:43  INFO      LEADLAG marker NVDA +4.5 bps → GOOGL buy (echo 1.5 bps in 7 ticks): buy 2 GOOGL @ 180.26
+18:22:43  INFO      Order: IOC buy 2 GOOGL @ 180.26 on 9102 (open buy GOOGL: 9102 179.99 + 8 bps = 180.1340)
+18:22:43  INFO      Fill on 9102: buy 2 GOOGL @ 179.99
+18:22:43  INFO      LEADLAG fill: buy 2 GOOGL @ 179.99
+18:22:49  INFO      STATS quota: 5 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1384 msgs (23/s), per-message handling p50≤100µs p99≤2000µs max=1609µs | flashes seen 0, acted on 0, filled 0 | leadlag: 3 triggers acted on (0 ramp), 2 closed, flat-trade cash +0.32 | venues: primary 0 orders (200 bps), 9102 5 orders (8 bps)
+18:23:01  INFO      LEADLAG exit marker NVDA→GOOGL: sell 2 GOOGL @ 179.23
+18:23:01  INFO      Order: IOC sell 2 GOOGL @ 179.32 on 9102 (reduce sell GOOGL: 9102 179.68 + 8 bps = 179.5363)
+18:23:01  INFO      Fill on 9102: sell 2 GOOGL @ 179.68
+18:23:01  INFO      LEADLAG fill: sell 2 GOOGL @ 179.68
+18:23:02  INFO      LEADLAG closed NVDA→GOOGL buy (marker): cash -0.62, 1 entries, left +0
+18:23:23  INFO      LEADLAG marker TSLA -4.4 bps → MSFT buy (echo 1.8 bps in 5 ticks): buy 1 MSFT @ 419.94
+18:23:23  INFO      Order: IOC buy 1 MSFT @ 419.94 on 9102 (open buy MSFT: 9102 419.34 + 8 bps = 419.6755)
+18:23:23  INFO      Fill on 9102: buy 1 MSFT @ 419.34
+18:23:23  INFO      LEADLAG fill: buy 1 MSFT @ 419.34
+18:23:29  INFO      LEADLAG exit marker TSLA→MSFT: sell 1 MSFT @ 417.98
+18:23:29  INFO      Order: IOC sell 1 MSFT @ 418.19 on 9102 (reduce sell MSFT: 9102 419.03 + 8 bps = 418.6948)
+18:23:29  INFO      Fill on 9102: sell 1 MSFT @ 419.03
+18:23:29  INFO      LEADLAG fill: sell 1 MSFT @ 419.03
+18:23:37  INFO      LEADLAG closed TSLA→MSFT buy (marker): cash -0.31, 1 entries, left +0
+18:23:49  INFO      STATS quota: 8 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1395 msgs (23/s), per-message handling p50≤100µs p99≤2000µs max=2513µs | flashes seen 0, acted on 0, filled 0 | leadlag: 4 triggers acted on (0 ramp), 4 closed, flat-trade cash -0.61 | venues: primary 0 orders (200 bps), 9102 8 orders (8 bps)
+18:24:46  INFO      LEADLAG marker NVDA -6.1 bps → GOOGL sell (echo 2.0 bps in 7 ticks): sell 2 GOOGL @ 179.34
+18:24:46  INFO      Order: IOC sell 2 GOOGL @ 179.34 on 9102 (reduce sell GOOGL: 9102 179.60 + 8 bps = 179.4563)
+18:24:46  INFO      Fill on 9102: sell 2 GOOGL @ 179.60
+18:24:46  INFO      LEADLAG fill: sell 2 GOOGL @ 179.60
+18:24:50  INFO      STATS quota: 9 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1394 msgs (23/s), per-message handling p50≤100µs p99≤2000µs max=1809µs | flashes seen 0, acted on 0, filled 0 | leadlag: 5 triggers acted on (0 ramp), 4 closed, flat-trade cash -0.61 | venues: primary 0 orders (200 bps), 9102 9 orders (8 bps)
+18:24:59  INFO      LEADLAG exit marker NVDA→GOOGL: buy 2 GOOGL @ 180.36
+18:24:59  INFO      Order: IOC buy 2 GOOGL @ 180.27 on 9102 (open buy GOOGL: 9102 179.91 + 8 bps = 180.0539)
+18:24:59  INFO      Fill on 9102: buy 2 GOOGL @ 179.91
+18:24:59  INFO      LEADLAG fill: buy 2 GOOGL @ 179.91
+18:25:00  INFO      LEADLAG closed NVDA→GOOGL sell (marker): cash -0.62, 1 entries, left +0
+18:25:50  INFO      STATS quota: 10 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1393 msgs (23/s), per-message handling p50≤100µs p99≤2000µs max=1731µs | flashes seen 0, acted on 0, filled 0 | leadlag: 5 triggers acted on (0 ramp), 5 closed, flat-trade cash -1.23 | venues: primary 0 orders (200 bps), 9102 10 orders (8 bps)
+18:26:07  INFO      LEADLAG marker TSLA +5.0 bps → MSFT sell (echo 2.0 bps in 5 ticks): sell 1 MSFT @ 417.98
+18:26:07  INFO      Order: IOC sell 1 MSFT @ 417.98 on 9102 (reduce sell MSFT: 9102 418.61 + 8 bps = 418.2751)
+18:26:07  INFO      Fill on 9102: sell 1 MSFT @ 418.61
+18:26:07  INFO      LEADLAG fill: sell 1 MSFT @ 418.61
+18:26:13  INFO      LEADLAG exit marker TSLA→MSFT: buy 1 MSFT @ 419.86
+18:26:13  INFO      Order: IOC buy 1 MSFT @ 419.76 on 9102 (open buy MSFT: 9102 418.92 + 8 bps = 419.2551)
+18:26:13  INFO      Fill on 9102: buy 1 MSFT @ 418.92
+18:26:13  INFO      LEADLAG fill: buy 1 MSFT @ 418.92
+18:26:14  INFO      LEADLAG closed TSLA→MSFT sell (marker): cash -0.31, 1 entries, left +0
+18:26:28  INFO      LEADLAG marker AMD -4.4 bps → META buy (echo 1.3 bps in 4 ticks): buy 1 META @ 580.62
+18:26:28  INFO      Order: IOC buy 1 META @ 580.62 on 9102 (open buy META: 9102 579.89 + 8 bps = 580.3539)
+18:26:28  INFO      Fill on 9102: buy 1 META @ 579.89
+18:26:28  INFO      LEADLAG fill: buy 1 META @ 579.89
+18:26:33  INFO      LEADLAG exit marker AMD→META: sell 1 META @ 578.13
+18:26:33  INFO      Order: IOC sell 1 META @ 578.42 on 9102 (reduce sell META: 9102 579.58 + 8 bps = 579.1163)
+18:26:33  INFO      Fill on 9102: sell 1 META @ 579.58
+18:26:33  INFO      LEADLAG fill: sell 1 META @ 579.58
+18:26:47  INFO      LEADLAG closed AMD→META buy (marker): cash -0.31, 1 entries, left +0
+18:26:50  INFO      STATS quota: 14 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1384 msgs (23/s), per-message handling p50≤100µs p99≤2000µs max=1873µs | flashes seen 0, acted on 0, filled 0 | leadlag: 7 triggers acted on (0 ramp), 7 closed, flat-trade cash -1.85 | venues: primary 0 orders (200 bps), 9102 14 orders (8 bps)
+18:27:15  INFO      LEADLAG marker NVDA +4.6 bps → GOOGL buy (echo 1.5 bps in 7 ticks): buy 2 GOOGL @ 180.32
+18:27:15  INFO      Order: IOC buy 2 GOOGL @ 180.32 on 9102 (open buy GOOGL: 9102 180.05 + 8 bps = 180.1940)
+18:27:15  INFO      Fill on 9102: buy 2 GOOGL @ 180.05
+18:27:15  INFO      LEADLAG fill: buy 2 GOOGL @ 180.05
+18:27:23  INFO      LEADLAG exit marker NVDA→GOOGL: sell 2 GOOGL @ 179.30
+18:27:23  INFO      Order: IOC sell 2 GOOGL @ 179.38 on 9102 (reduce sell GOOGL: 9102 179.74 + 8 bps = 179.5962)
+18:27:23  INFO      Fill on 9102: sell 2 GOOGL @ 179.74
+18:27:23  INFO      LEADLAG fill: sell 2 GOOGL @ 179.74
+18:27:24  INFO      LEADLAG closed NVDA→GOOGL buy (marker): cash -0.62, 1 entries, left +0
+18:27:50  INFO      STATS quota: 16 orders sent, 0 RATE_LIMITED (0.0%) | hot path: 1393 msgs (23/s), per-message handling p50≤50µs p99≤1000µs max=10102µs | flashes seen 0, acted on 0, filled 0 | leadlag: 8 triggers acted on (0 ramp), 8 closed, flat-trade cash -2.47 | venues: primary 0 orders (200 bps), 9102 16 orders (8 bps)

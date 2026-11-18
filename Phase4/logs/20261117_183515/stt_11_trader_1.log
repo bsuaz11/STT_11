@@ -1,0 +1,36 @@
+18:35:15  SUPERVISOR start stt_11_trader_1
+18:35:16  INFO      Seat stt_11_trader_1 roles: ipo, leadlag, probe, signal
+18:35:16  INFO      Venues: primary wss://feed.algoarena-st.duckdns.org + STT_11 (wss://feed-8767.algoarena-st.duckdns.org), Group 8 (wss://feed-8770.algoarena-st.duckdns.org), 3-sigma (wss://feed-8773.algoarena-st.duckdns.org), 2026Autumn 3 (wss://feed-8769.algoarena-st.duckdns.org)
+
+╔══════════════════════════════════════════════╗
+║       AlgoArena — Trader Bot                 ║
+╠══════════════════════════════════════════════╣
+║  Team:     stt_11_trader_1                   ║
+║  Exchange: wss://feed.algoarena-st.duckdns.org║
+║  Cash:     set at connect  Tick: 0.5s        ║
+╚══════════════════════════════════════════════╝
+
+18:35:16  INFO      Connecting to wss://feed.algoarena-st.duckdns.org (EXCHANGE_URL from the shell)
+18:35:16  INFO      Venue STT_11 connected (wss://feed-8767.algoarena-st.duckdns.org)
+18:35:16  INFO      Venue 3-sigma connected (wss://feed-8773.algoarena-st.duckdns.org)
+18:35:16  INFO      Connected to wss://feed.algoarena-st.duckdns.org as stt_11_trader_1 (trader)
+18:35:16  INFO      Venue 2026Autumn 3 connected (wss://feed-8769.algoarena-st.duckdns.org)
+18:35:16  INFO      Venue Group 8 connected (wss://feed-8770.algoarena-st.duckdns.org)
+18:35:16  INFO      Venue STT_11 fees: taker 7.0 bps, rebate 5.0 bps
+18:35:16  INFO      Venue 3-sigma fees: taker 8.0 bps, rebate 6.0 bps
+18:35:16  INFO      Venue 2026Autumn 3 fees: taker 11.0 bps, rebate 7.0 bps
+18:35:16  INFO      Venue Group 8 fees: taker 8.0 bps, rebate 5.0 bps
+Tick 2786857  rank=#?  net_worth=$165,078.92  realized_pnl=-4,897.64
+18:35:16  INFO      Portfolio seeded from leaderboard: cash=120978.64 positions={'AAPL': -368, 'MSFT': 34, 'NVDA': 36, 'TSLA': 36, 'AMZN': 44, 'GOOGL': 28, 'META': 44, 'NFLX': 44, 'AMD': 44, 'INTC': 42, 'ORCA': 56, 'VLTA': 12}
+18:35:16  INFO      Session event: FEE_SCHEDULE — Venue fee schedule: taker 400.0 bps, maker rebate -100.0 bps
+Session: FEE_SCHEDULE — Venue fee schedule: taker 400.0 bps, maker rebate -100.0
+bps
+18:35:16  INFO      Event: FEE_SCHEDULE | Venue fee schedule: taker 400.0 bps, maker rebate -100.0 bps | {'port': 8765, 'taker': 0.04, 'rebate': -0.01, 'net': 0.05, 'old': {'taker': 0.04, 'rebate': -0.01}, 'new': {'taker': 0.04, 'rebate': -0.01}}
+18:35:16  INFO      Session event: SESSION_OPEN — Session already open — you joined mid-session.
+▶  Session open — trading begins
+18:35:16  INFO      Session rules: shorts=True limit=1000 SSR=6.0% LULD=8.0% maint=40% | seat caps +830/-830, fee 7 bps
+18:35:17  INFO      Session baseline equity 211416.81 (soft stop at 208416.81, hard at 206416.81)
+18:35:17  INFO      Probe: round trip of 5 MSFT
+18:35:20  INFO      Order: IOC buy 1 MSFT @ 358.11 on primary (primary)
+18:35:20  INFO      order_ack -> id: fe4a2c55-f363-4c70-93af-65ceb28f4f76 buy 1 MSFT @ 358.11
+18:35:20  INFO      Fill: bought 1 MSFT @ 357.4000 (fee=7.1480)

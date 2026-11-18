@@ -1,0 +1,24 @@
+Week-8 lead-lag scan: 750 sessions, 16,200,000 symbol-ticks (9 stocks × 8 followers × lags 1–10); events ±(3,80), halts and the first 40 ticks masked; spikes = idiosyncratic ticks beyond 4σ.
+
+leader → follower lag       dir   beta       t  spikes
+   AMD → GOOGL      6      same  +0.37   862.5   24355
+        follower echo (bps) at offsets 1–10: [0.44, -0.14, -0.01, -0.13, 0.02, 5.43, -5.45, -0.1, -0.01, 0.08]
+  NFLX → AMZN       8  opposite  -0.29  -145.6    4818
+        follower echo (bps) at offsets 1–10: [0.41, -0.76, 0.36, -0.77, 0.48, -0.8, 0.62, -1.97, 1.79, -0.72]
+  MSFT → TSLA       4  opposite  -0.34  -106.2    5817
+        follower echo (bps) at offsets 1–10: [0.31, -1.16, 0.32, -2.12, 1.39, -0.81, 0.25, -0.68, 0.16, -0.6]
+
+Held-out check: links found on the first half of every part MATCH the links found on the second half.
+  train: AMD→GOOGL lag 6 + (t=605.8), NFLX→AMZN lag 8 − (t=-106.4), MSFT→TSLA lag 4 − (t=-74.9)
+  test : AMD→GOOGL lag 6 + (t=616.6), NFLX→AMZN lag 8 − (t=-99.9), MSFT→TSLA lag 4 − (t=-75.6)
+
+Earnings cross-check, NFLX prints (750): the AMZN move relative to the unlinked stocks starts at offset 9
+  NFLX (bps, signed by the print): [57, 113, 170, 226, 283, 339, 396, 452, 509, 565, 622, 679, 736, 793, 849, 821, 793, 765, 737, 709, 681, 652, 641, 630, 623, 618]
+  AMZN relative:               [-0.0, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, -16.3, -12.3, -34.0, -25.5, -42.3, -35.2, -52.6, -44.9, -58.7, -53.7, -65.3, -63.4, -71.9, -71.7, -78.1, -52.8, -39.1]
+
+The echo is a one-tick bump in the follower's fair value that mostly reverts the
+next tick (+ at the lag, − just after), so a trade must be on BEFORE the lag and
+off as the echo lands. In quiet markets the bump is a few bps (under the spread);
+on a leader's earnings ramp or a market-wide print it is 15–20 bps a tick for ~15 ticks.
+
+Pipeline: 13.6 s end to end (11.4 s DuckDB load, 2.2 s numpy) for 16,200,000 rows.

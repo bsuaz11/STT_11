@@ -11,8 +11,16 @@ the RiskManager for the kill switch, the session and position stops and the
 notional caps; requote_loop() runs the stops once a pass and turns a trip
 into pulled quotes and closing IOCs.
 
-Run:
+Fees (week 8: fee wars). Each venue publishes its own schedule (FEE_SCHEDULE
+at connect). The width on a venue always covers its maker cost plus
+MAKER_EDGE_BPS; on a venue where makers PAY more than PUNITIVE_MAKER_BPS
+(the primary charged makers 50 bps in week 7) the bot stands aside, and an
+IOC exit only goes out where the taker fee is under FLATTEN_MAX_TAKER_BPS —
+otherwise a stop pulls the quotes instead of paying 2% to cross.
+
+Run (one process quotes every venue in EXCHANGE_URLS):
     TEAM_ID=stt_11_broker_1 python -m team.broker
+    EXCHANGE_URLS=wss://feed.<arena>,wss://feed-8767.<arena> TEAM_ID=stt_11_broker_1 python -m team.broker
 """
 
 from __future__ import annotations
@@ -137,6 +145,16 @@ LISTING_WIDE_SEC = 300
 LISTING_SPREAD_MULT = 3.0
 LISTING_MAX_SHARES = 50             # long and short, instead of the BROKER_MAX_ caps
 
+# ── Fees per venue (week 8) ──────────────────────────────────────────────
+# Half-spread ≥ maker cost + MAKER_EDGE_BPS on every venue. Where makers pay
+# more than PUNITIVE_MAKER_BPS, no quote earns its fee against a house maker
+# quoting ~25 bps wide: stand aside there (inventory held there is market
+# exposure with zero expected value; paying 50–200 bps to trade it is a sure
+# loss). Exits by IOC only where the taker fee is under FLATTEN_MAX_TAKER_BPS.
+MAKER_EDGE_BPS = 10
+PUNITIVE_MAKER_BPS = 20
+FLATTEN_MAX_TAKER_BPS = 50
+
 # ── Volatility ───────────────────────────────────────────────────────────
 # Width = max(the floor above, VOL_MULT × the std dev of the last VOL_WINDOW
 # mark-to-mark returns), so a half-spread covers ~1.5 moves of the mark. In a
@@ -256,6 +274,18 @@ class _RollingState(_AdaptedState):
         price = self.exchange_prices.get(symbol) or self.yahoo_prices.get(symbol)
         return price, self.price_history.setdefault(symbol)
 
+    #: This venue's maker cost as a fraction (−rebate; 0 when makers are paid).
+    maker_cost: float = 0.0
+
+    def compute_spread(self, symbol: str) -> float:
+        """The owner's width, floored so the half-spread pays this venue's
+        maker fee plus MAKER_EDGE_BPS (the owner's spread() sees no venue)."""
+        width = super().compute_spread(symbol)
+        price = self.exchange_prices.get(symbol) or self.yahoo_prices.get(symbol)
+        if price:
+            width = max(width, 2 * price * (self.maker_cost + MAKER_EDGE_BPS / 1e4))
+        return width
+
 
 class BudgetedBrokerBot(_AdaptedBrokerBot):
     """Standard quoting with a message budget, event avoidance and a
@@ -305,6 +335,17 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         self._kill_pulled = False               # quotes already pulled for this trip
         self._closing_msg: PlaceOrder | None = None   # the IOC a stop wants out
         self._last_risk_log = 0.0
+        self._taker: float | None = None        # this venue's fees (FEE_SCHEDULE)
+        self._rebate: float | None = None
+
+    # ── Fees ────────────────────────────────────────────────────────────
+    def _punitive(self) -> bool:
+        """Makers pay more than PUNITIVE_MAKER_BPS here: stand aside."""
+        return self._rebate is not None and -self._rebate * 1e4 > PUNITIVE_MAKER_BPS
+
+    def _flatten_ok(self) -> bool:
+        """An IOC exit is worth its taker fee here."""
+        return self._taker is None or self._taker * 1e4 <= FLATTEN_MAX_TAKER_BPS
 
     # ── Event schedule ──────────────────────────────────────────────────
     def _event_phase(self, sym: str) -> tuple[str | None, dict | None]:
@@ -342,7 +383,10 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         return BROKER_MAX_SHARES, BROKER_MAX_SHORT
 
     async def _flatten_for_events(self) -> None:
-        """IOC out of inventory in a symbol whose earnings print is imminent."""
+        """IOC out of inventory in a symbol whose earnings print is imminent
+        (only where the taker fee is worth paying: the print is a coin flip)."""
+        if not self._flatten_ok():
+            return
         now = time.monotonic()
         for sym in list(self._quote_symbols):
             phase, ev = self._event_phase(sym)
@@ -407,7 +451,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                              " and flattening" if d.flatten_all else "")
                 await self.cancel_all_quotes()
                 self._kill_pulled = True
-            if d.flatten_all:
+            if d.flatten_all and self._flatten_ok():
                 for sym, q in list(self.state.positions.items()):
                     if q:
                         await self._close(sym, "KILL SWITCH flatten")
@@ -416,7 +460,14 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
             logger.warning("Kill switch released — quoting again")
             self._kill_pulled = False
         for sym in d.flatten:                   # per-position stop
-            await self._close(sym, "POSITION STOP")
+            if self._flatten_ok():
+                await self._close(sym, "POSITION STOP")
+            else:                               # crossing costs more than it saves: stop quoting it
+                self._paused[sym] = time.monotonic() + self.risk.limits.stop_cooldown_ticks
+                if sym in self.state.last_quote_prices:
+                    await self.cancel_quotes(sym)
+                logger.warning("POSITION STOP %s: taker %.0f bps — quotes pulled, no IOC",
+                               sym, (self._taker or 0) * 1e4)
         return False
 
     # ── Toxic flow ──────────────────────────────────────────────────────
@@ -713,6 +764,15 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
                 self._budget = min(MESSAGE_BUDGET, max(2, int(quota) - TRADER_RESERVE))
             logger.info("WEEK → %s: counters reset, broker budget %d/s",
                         data.get("week"), self._budget)
+        elif msg.event == "FEE_SCHEDULE" and isinstance(data.get("taker"), (int, float)):
+            self._taker = float(data["taker"])
+            self._rebate = float(data.get("rebate") or 0.0)
+            self.state.maker_cost = max(0.0, -self._rebate)
+            logger.info("Venue fees: taker %.1f bps, rebate %.1f bps → %s", self._taker * 1e4,
+                        self._rebate * 1e4, "STANDING ASIDE (makers pay)" if self._punitive()
+                        else f"min half-spread {(self.state.maker_cost * 1e4 + MAKER_EDGE_BPS):.0f} bps")
+            if self._punitive():
+                await self.cancel_all_quotes()
         elif msg.event == "SSR_ON" and data.get("symbol"):
             self._ssr.add(data["symbol"])
         elif msg.event == "FLASH" and data.get("symbol"):
@@ -818,7 +878,7 @@ class BudgetedBrokerBot(_AdaptedBrokerBot):
         return abs(centre - last) / centre
 
     def _blocked_symbol(self, sym: str) -> bool:
-        return (sym in self._skip or time.monotonic() < self._paused.get(sym, 0)
+        return (self._punitive() or sym in self._skip or time.monotonic() < self._paused.get(sym, 0)
                 or self._halts.is_halted(sym) or self._event_phase(sym)[0] == "out")
 
     async def requote_loop(self) -> None:
@@ -938,6 +998,12 @@ class MyBroker(Broker):
     async def _run_venues(self) -> None:
         # Same as Broker._run_venues, but with the budgeted bot.
         urls = [u.strip() for u in _broker_config.EXCHANGE_URLS if u.strip()]
+        if os.environ.get("BROKER_VENUES", "").lower() == "auto" and len(urls) == 1:
+            # Week 8: quote every venue. Each one's fees decide what we do
+            # there (punitive → stand aside; otherwise a fee-covering width).
+            from team.venues import discover_venues
+            urls += [v["url"] for v in discover_venues(urls[0]) if v["url"] not in urls]
+            logger.info("Quoting %d venues: %s", len(urls), ", ".join(urls))
         if len(urls) <= 1:
             await BudgetedBrokerBot(self, urls[0] if urls else None).run()
             return

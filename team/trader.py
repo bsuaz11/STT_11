@@ -6,10 +6,15 @@ Every seat runs this file; TEAM_ID picks what it does (SEAT_ROLES below).
     signal   Phase2/event_gap.py: take stale liquidity after a public print
     probe    a small round trip after the open and after every halt resumes
     ipo      bid in IPO bookbuilds and manage the allocation once it lists
+    leadlag  trade the week-8 hidden links (team/leadlag.py): after a big
+             leader move, an order on its follower before the echo lands
 
 Orders go out as IOC. Whatever a role wants passes through gate() in
 TakerBot._place_order, the one place orders leave the bot, so a role cannot
-break a hard limit however it is written. The risk layer (team/risk.py: kill
+break a hard limit however it is written. Then route() (team/venues.py)
+picks the venue: the best price after each venue's taker fee, among the
+venues that are live and coherent with the primary (week 8: NBBO routing
+and fee wars). TRADER_VENUES=auto|none|<url,…> picks the extra venues. The risk layer (team/risk.py: kill
 switch, session and position stops, notional caps, halt re-entry) runs at the
 top of every tick and inside gate(). Every timer runs on the exchange's
 logical clock (team.common.TickClock), never the wall clock, so the same code
@@ -50,7 +55,17 @@ from team.common import (
     team_positions,
 )
 from team.config import CAPITAL
+from team.leadlag import LeadLagSignal
 from team.risk import TRADER_LIMITS, RiskManager
+from team.venues import (
+    MAX_SECONDARY,
+    CombinedPortfolio,
+    Route,
+    VenueLink,
+    VenueState,
+    discover_venues,
+    route,
+)
 
 if TYPE_CHECKING:
     from shared.messages import BookSnapshot, Leaderboard, PortfolioUpdate, SessionEvent
@@ -60,8 +75,8 @@ logger = logging.getLogger(__name__)
 
 # ── Seats ────────────────────────────────────────────────────────────────
 SEAT_ROLES = {
-    "stt_11_trader_1": {"signal", "probe", "ipo"},
-    "stt_11_trader_2": {"signal", "probe", "ipo"},
+    "stt_11_trader_1": {"signal", "probe", "ipo", "leadlag"},
+    "stt_11_trader_2": {"signal", "probe", "ipo", "leadlag"},
 }
 # Seats sharing the team's room in one symbol. Week 7 runs trader_1 alone;
 # set SIGNAL_SEATS=2 in the shell if trader_2 trades too.
@@ -106,11 +121,22 @@ PROBE_DELAY_TICKS = 3         # let the book refill after a resume
 # us, and retrying every tick churns the team's quota and cancel fees.
 PROBE_MAX_BUYS = 3
 
+# ── Venues (week 8: NBBO routing, fee wars) ─────────────────────────────
+# An order that OPENS exposure only goes to a venue charging at most this
+# taker fee: the primary charged 200 bps in week 7 (400 in open play since),
+# which no strategy here can pay. Closes go wherever the position is.
+MAX_OPEN_TAKER = 0.0060
+VENUE_MSGS_PER_SEC = 4        # per extra venue (each venue meters its own quota)
+# The probe keeps the primary in use (orders on both venues) at minimum cost:
+# one share while the primary's fee is punitive.
+PROBE_PUNITIVE_SHARES = 1
+
 # ── IPO ──────────────────────────────────────────────────────────────────
 # Each seat bids this share of its cash at the top of the range (the sure
-# allocation). Two seats at $100k bid at most $30k: a deal that breaks 25%
-# costs under 10% of one seat. Both seats' full fills stay under the limit.
-IPO_CASH_SHARE = 0.15
+# allocation). The allocation can only be sold on the primary, at its fee
+# (200 bps in week 7), so the stake is kept small: $8k at LUNA's $52 top is
+# ~150 shares; a deal that breaks 10% costs under 1% of the seat.
+IPO_CASH_SHARE = 0.08
 IPO_MAX_SHARES = 400
 IPO_RETRY_TICKS = 5           # resend an indication with no confirmation
 IPO_MAX_TRIES = 6
@@ -234,6 +260,18 @@ class MyTrader(Trader):
         logger.info("Seat %s roles: %s", self.team_id,
                     ", ".join(sorted(self.roles)) or "NONE — this seat will not trade")
         self.signal = EventGapSignal(params=params or GapParams())
+        self.leadlag = LeadLagSignal()
+        self._ll_leaders = {lk.leader for lk in self.leadlag.links}
+        self._ll_last_ref: dict[str, float] = {}  # leader -> last venue mark seen
+        self._ll_rets: dict[str, float] = {}      # leader -> log return since the last step
+        self._ll_queue: list = []                 # leadlag orders waiting for the quota
+        self._ll_tick = -1
+        self._event_t0: float | None = None       # server tick of the opening cross (t0)
+        # Venues: the primary's state is kept here; TakerBot adds the others.
+        self.venue_primary = VenueState("primary", primary=True)
+        self.venue_links: list[VenueLink] = []
+        self.venue_spec = "none"                  # MyTrader.run() reads TRADER_VENUES
+        self._probe_sig: Signal | None = None
         self.portfolio = None                     # set by whatever runs this seat
         self._logged_plans = 0
         self._state_path = state_path             # survives a process restart mid-trade
@@ -310,8 +348,70 @@ class MyTrader(Trader):
             return self._reduce_largest(market, portfolio, "RISK OFF")
         return (self._flash_order(market, portfolio)
                 or self._signal_order(market, portfolio)
+                or self._leadlag_order(market, portfolio)
                 or self._listing_exit(market, portfolio)
                 or self._probe_order(market, portfolio))
+
+    # ── Role: lead-lag (week 8) ─────────────────────────────────────────
+    def _leadlag_order(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
+        """Once per tick: feed the leader returns to the signal; then send the
+        next queued order (entries before the echo lands, exits on it)."""
+        if "leadlag" not in self.roles:
+            return None
+        tick = int(self.clock.now())
+        if tick != self._ll_tick:
+            self._ll_tick = tick
+            rets, self._ll_rets = self._ll_rets, {}
+            fol = self.leadlag.followers
+            touch = {s: self._best_touch(s, market) for s in fol}
+            halted = {s for s in fol | self._ll_leaders if self.halts.is_halted(s)}
+            halted |= {s for s in fol if self.risk.resume.blocks(s, self.clock.now(), *touch[s])}
+            probe = self._probe.symbol if self._probe is not None and self._probe.phase != "done" else None
+            busy = {s for s in fol if s in self.signal.plans or s in self._flash or s == probe
+                    or s in self.risk.book.cooldown and self.risk.book.cooldown[s] > self.clock.now()}
+            orders = self.leadlag.step(tick, self._ref, touch, halted, portfolio.positions,
+                                       rets=rets, busy=busy)
+            # Exits are re-issued every tick, so keep only the newest per symbol.
+            fresh = {(o.symbol, o.side) for o in orders}
+            self._ll_queue = [o for o in self._ll_queue if (o.symbol, o.side) not in fresh] + orders
+        while self._ll_queue:
+            o = self._ll_queue.pop(0)
+            if self.halts.is_halted(o.symbol):
+                continue
+            if self._is_pending(o.symbol):
+                self._ll_queue.insert(0, o)
+                return None
+            self._mark_pending(o.symbol)
+            logger.info("LEADLAG %s: %s %d %s @ %.2f", o.reason, o.side, o.quantity, o.symbol, o.price)
+            return Signal(symbol=o.symbol, side=o.side, quantity=o.quantity, price=o.price)
+        return None
+
+    def _best_touch(self, sym: str, market: MarketData) -> tuple[float | None, float | None]:
+        """Best bid and ask across the venues an order could go to (the NBBO
+        among live, coherent venues); the primary's touch if none."""
+        bid, ask = market.best_bid(sym), market.best_ask(sym)
+        ref = self._ref.get(sym)
+        for link in self.venue_links:
+            st = link.state
+            t = st.quotes.get(sym)
+            if t is None or not st.usable(sym) or st.taker > MAX_OPEN_TAKER:
+                continue
+            if ref and t.ref and abs(t.ref / ref - 1) > 0.01:
+                continue
+            if t.bid and (bid is None or t.bid > bid):
+                bid = t.bid
+            if t.ask and (ask is None or t.ask < ask):
+                ask = t.ask
+        return bid, ask
+
+    def route_fee(self) -> float:
+        """The taker fee an opening order will actually pay: the cheapest live
+        venue under MAX_OPEN_TAKER, else the primary's."""
+        fees = [lk.state.taker for lk in self.venue_links
+                if lk.state.connected and lk.state.taker <= MAX_OPEN_TAKER]
+        if self.venue_primary.taker <= MAX_OPEN_TAKER:
+            fees.append(self.venue_primary.taker)
+        return min(fees) if fees else self.venue_primary.taker
 
     # ── Role: flash ─────────────────────────────────────────────────────
     def _on_flash(self, data: dict) -> None:
@@ -469,6 +569,7 @@ class MyTrader(Trader):
     def _on_print(self, sym: str, pct: float) -> None:
         if "signal" not in self.roles or sym in SKIP_SYMBOLS:
             return
+        self.signal.set_fee(self.route_fee())
         plan = self.signal.on_print(sym, pct, self._ref.get(sym, 0.0), int(self.clock.now()),
                                     self.portfolio.positions.get(sym, 0))
         if plan:
@@ -529,16 +630,25 @@ class MyTrader(Trader):
                 return None
             p.buys += 1
             px = round(ask * (1 + SLIP_BPS / 1e4), 2)
-            if not portfolio.can_buy(p.symbol, PROBE_SHARES, px):
+            shares = (PROBE_PUNITIVE_SHARES if self.venue_primary.taker > MAX_OPEN_TAKER
+                      else PROBE_SHARES)
+            if not portfolio.can_buy(p.symbol, shares, px):
                 p.phase = "done"
                 return None
             self._mark_pending(p.symbol)
-            return Signal(symbol=p.symbol, side="buy", quantity=PROBE_SHARES, price=px)
+            self._probe_sig = Signal(symbol=p.symbol, side="buy", quantity=shares, price=px)
+            return self._probe_sig
         if p.phase == "sell" and bid and p.held > 0:
             self._mark_pending(p.symbol)
-            return Signal(symbol=p.symbol, side="sell", quantity=p.held,
-                          price=round(bid * (1 - SLIP_BPS / 1e4), 2))
+            self._probe_sig = Signal(symbol=p.symbol, side="sell", quantity=p.held,
+                                     price=round(bid * (1 - SLIP_BPS / 1e4), 2))
+            return self._probe_sig
         return None
+
+    def venue_for(self, sig: Signal) -> str | None:
+        """A venue this order must use, or None to route it. The probe is the
+        primary's heartbeat (and keeps both venues in use) — the primary."""
+        return "primary" if sig is self._probe_sig else None
 
     # ── Role: IPO ───────────────────────────────────────────────────────
     def on_ipo(self, symbol: str, lo: float, hi: float, shares: int,
@@ -579,9 +689,12 @@ class MyTrader(Trader):
             deal["high"] = max(deal["high"], mark)
             offer = deal["offer"]
             broke = mark < offer * (1 - LISTING_STOP_PCT)
-            faded = (deal["high"] >= offer * (1 + LISTING_MIN_GAIN_PCT)
+            # The allocation sells on the primary only: a profit-taking exit must
+            # clear its fee, and a time exit is not worth a punitive one.
+            fee = self.venue_primary.taker
+            faded = (deal["high"] >= offer * (1 + LISTING_MIN_GAIN_PCT + 2 * fee)
                      and mark < deal["high"] * (1 - LISTING_TRAIL_PCT))
-            stale = now - deal["t0"] >= LISTING_MAX_HOLD_TICKS
+            stale = now - deal["t0"] >= LISTING_MAX_HOLD_TICKS and fee <= MAX_OPEN_TAKER
             if (broke or faded or stale) and not self.halts.is_halted(sym) and not self._is_pending(sym):
                 logger.info("Listing exit %s: sell %d (offer=%.2f high=%.2f mark=%.2f)",
                             sym, pos, offer, deal["high"], mark)
@@ -607,8 +720,9 @@ class MyTrader(Trader):
 
     def _equity(self, market: MarketData, portfolio: Portfolio) -> float:
         """Net worth at the venue mark — what the maintenance check uses."""
-        return portfolio.cash + sum(q * self._mark(s, market)
-                                    for s, q in portfolio.positions.items() if q)
+        # Extra venues fund their own cash at connect: only their P&L counts.
+        return (portfolio.cash - getattr(portfolio, "capital_offset", 0.0)
+                + sum(q * self._mark(s, market) for s, q in portfolio.positions.items() if q))
 
     def _risk_off_level(self) -> float:
         capital = self._capital
@@ -655,6 +769,9 @@ class MyTrader(Trader):
             ended.append("flash trade")
         if self._listings.pop(sym, None) is not None:
             ended.append("listing")
+        if sym in self.leadlag.trades:
+            self.leadlag.end(sym, int(self.clock.now()))
+            ended.append("lead-lag trade")
         if ended:
             logger.warning("%s %s: ended the %s", why, sym, ", ".join(ended))
             self._save_state()
@@ -766,9 +883,12 @@ class MyTrader(Trader):
             return
         self._stats_at = now
         sent = self.msgs_sent
-        logger.info("STATS quota: %d orders sent, %d RATE_LIMITED (%.1f%%) | hot path: %s | %s",
+        logger.info("STATS quota: %d orders sent, %d RATE_LIMITED (%.1f%%) | hot path: %s | %s | %s | venues: %s",
                     sent, self.rate_limited, 100 * self.rate_limited / max(1, sent + self.rate_limited),
-                    self.hot.report(), self.flash_summary())
+                    self.hot.report(), self.flash_summary(), self.leadlag.summary(),
+                    ", ".join(f"{v.name} {v.orders} orders ({v.taker * 1e4:.0f} bps"
+                              f"{'' if v.primary or v.connected else ', down'})"
+                              for v in [self.venue_primary] + [lk.state for lk in self.venue_links]))
         self.hot.reset()
 
     def _in_flight(self, sym: str, side: str) -> int:
@@ -788,6 +908,11 @@ class MyTrader(Trader):
     def on_book(self, symbol: str, ref_price: float) -> None:
         """Keep the venue mark, which the LULD band and maintenance check use."""
         self.risk.on_data(self.clock.now())
+        if ref_price > 0 and symbol in self._ll_leaders:
+            last = self._ll_last_ref.get(symbol)
+            if last and ref_price != last:            # the mark moves once a tick
+                self._ll_rets[symbol] = self._ll_rets.get(symbol, 0.0) + math.log(ref_price / last)
+            self._ll_last_ref[symbol] = ref_price
         if ref_price > 0:
             self._ref[symbol] = ref_price
             fair = self._fair.get(symbol)
@@ -815,9 +940,15 @@ class MyTrader(Trader):
         self._ssr_pct = float(cfg.get("SSR_TRIGGER_PCT", self._ssr_pct))
         self._locate_cap = int(cfg.get("SHORT_LOCATE_CAP", self._locate_cap))
         self._luld = float(cfg.get("LULD_BAND_PCT", self._luld))
+        self.venue_primary.luld = self._luld
         if data.get("late_join"):
             self._load_state()
+            # A restart mid-block: make sure the primary still sees an order.
+            if "probe" in self.roles and self.venue_primary.orders == 0 and not self._probe_queue:
+                self._probe_queue = [PROBE_SYMBOL]
         else:                                     # all sticky until the next open
+            self._event_t0 = self.clock.now()
+            self.leadlag.new_session()
             self._state_loaded = True
             self.signal.plans.clear()
             self._listings.clear()
@@ -850,7 +981,8 @@ class MyTrader(Trader):
             self._capital = capital_baseline(float(me["net_worth"]), CAPITAL.get(self.team_id))
         if self.portfolio is not None and "positions" in me:
             venue = {s: int(q) for s, q in me["positions"].items() if q}
-            mine = {s: int(q) for s, q in self.portfolio.positions.items() if q}
+            primary = getattr(self.portfolio, "primary", self.portfolio)   # this board is the primary's
+            mine = {s: int(q) for s, q in primary.positions.items() if q}
             self._view_mismatch = self._view_mismatch + 1 if venue != mine else 0
             if self._view_mismatch >= STAND_DOWN_BOARDS and not self._stood_down:
                 self._stood_down = True
@@ -924,6 +1056,8 @@ class MyTrader(Trader):
         if symbol in self.signal.plans:           # a plan's base includes any probe shares
             self.signal.on_fill(symbol, side, quantity, price)
             self._save_state()
+        elif self.leadlag.on_fill(symbol, side, quantity, price):
+            logger.info("LEADLAG fill: %s %d %s @ %.2f", side, quantity, symbol, price)
         elif ft is not None:
             ft.on_fill(side, quantity, price)
             row = getattr(ft, "row", {})
@@ -943,6 +1077,7 @@ class MyTrader(Trader):
         if event == "FLASH":
             self._on_flash(data)
         elif event == "WEEK_CHANGED":            # the graded block starts: count it alone
+            self.leadlag.new_session()
             self._stats_at = 0.0
             self.maybe_log_stats()
             self.msgs_sent = self.rate_limited = 0
@@ -950,8 +1085,16 @@ class MyTrader(Trader):
             self.risk.new_session(self.clock.now())   # open-play losses don't count
             logger.info("WEEK → %s: quota and flash counters reset", data.get("week"))
         elif event == "FEE_SCHEDULE" and isinstance(data.get("taker"), (int, float)):
-            self.signal.set_fee(float(data["taker"]))
+            self.venue_primary.on_fee_schedule(data)
+            self.signal.set_fee(self.route_fee())
+        elif event == "CALENDAR":
+            if self._event_t0 is not None:        # calendar ticks count from the opening cross
+                self.leadlag.on_calendar([{**e, "tick": e["tick"] + self._event_t0}
+                                          for e in (data.get("events") or []) + (data.get("imminent") or [])
+                                          if isinstance(e.get("tick"), (int, float))])
         elif event == "CALENDAR_EVENT" and isinstance(data.get("pct"), (int, float)):
+            self.leadlag.on_print(int(data.get("tick") or self.clock.now()), data.get("affected"),
+                                  bool(data.get("market_wide")))
             for sym in data.get("affected") or []:
                 self._on_print(sym, float(data["pct"]))
         elif event == "SHOCK":                    # teacher-injected: target price per symbol
@@ -980,11 +1123,25 @@ class MyTrader(Trader):
             self._liquidated = True
             logger.error("This seat was LIQUIDATED — no further orders this session")
 
+    def on_venue_fill(self, side: str, symbol: str, quantity: int, price: float, venue: str) -> None:
+        """A fill on an extra venue: the strategies account for it like any other."""
+        logger.info("Fill on %s: %s %d %s @ %.2f", venue, side, quantity, symbol, price)
+        self.on_fill(side, symbol, quantity, price)
+
+    def on_venue_reject(self, code: str | None, message: str | None, venue: str) -> None:
+        """A reject on an extra venue. Its halts are its own (the link tracks
+        them); everything else counts toward the reject-storm monitor."""
+        if code == "SYMBOL_HALTED":
+            logger.info("REJECT on %s [%s]: %s — that venue only", venue, code, message)
+            return
+        self.on_reject(code, f"[{venue}] {message}")
+
     def run(self) -> None:
         """Connect and trade until interrupted."""
         logging.basicConfig(level=logging.INFO,
                             format="%(asctime)s  %(levelname)-8s  %(message)s",
                             datefmt="%H:%M:%S")
+        self.venue_spec = os.environ.get("TRADER_VENUES", "auto")
         asyncio.run(TakerBot(self).run())
 
 
@@ -1022,17 +1179,63 @@ class _WireTap:
             hot.record(clock() - t0)
 
 
+class _CombinedStrategy:
+    """The stock loop calls strategy.generate_signal(market, portfolio) with
+    the primary's portfolio; the trader must see every venue's positions."""
+
+    def __init__(self, owner: MyTrader) -> None:
+        self._owner = owner
+
+    def generate_signal(self, market: MarketData, portfolio: Portfolio) -> Signal | None:
+        return self._owner.on_tick(market, self._owner.portfolio)
+
+
 class TakerBot(_AdaptedTraderBot):
     """The standard bot (on_tick → order), with every Signal sent as an IOC,
     the hard limits in front of the wire, and portfolio recovery on reconnect."""
 
     def __init__(self, owner: MyTrader) -> None:
         super().__init__(owner)
-        owner.portfolio = self.portfolio
         self._in_session = False
         self._portfolio_synced = False
         self._sent_at: deque[float] = deque()     # monotonic send times, last ~1 s
+        self._venue_sent: dict[str, deque[float]] = {}
         self._acting = False
+        self.links = self._make_links(owner.venue_spec)
+        owner.venue_links = self.links
+        # The strategies and the risk layer see every venue's positions as one.
+        owner.portfolio = CombinedPortfolio(self.portfolio, [lk.state for lk in self.links])
+        self.strategy = _CombinedStrategy(owner)
+
+    def _make_links(self, spec: str) -> list[VenueLink]:
+        """Extra venues: "none", "auto" (the arena's venue list), or a comma
+        list of URLs / ports."""
+        spec = (spec or "none").strip()
+        if spec.lower() in ("", "none", "0", "off"):
+            return []
+        primary = _trader_config.EXCHANGE_URL
+        if spec.lower() == "auto":
+            found = discover_venues(primary)[:MAX_SECONDARY]
+            venues = [(v["name"], v["url"]) for v in found]
+        else:
+            from team.venues import venue_url
+            venues = []
+            for item in (x.strip() for x in spec.split(",") if x.strip()):
+                url = venue_url(primary, int(item)) if item.isdigit() else item
+                venues.append((item, url))
+        owner = self._owner
+        links = [VenueLink(name, url, owner.team_id, _trader_config.ARENA_TOKEN,
+                           owner.on_venue_fill, owner.on_venue_reject) for name, url in venues]
+        logger.info("Venues: primary %s + %s", primary,
+                    ", ".join(f"{lk.state.name} ({lk.url})" for lk in links) or "no others")
+        return links
+
+    async def run(self) -> None:
+        """The primary connection (with its reconnect loop) and every extra venue."""
+        if not self.links:
+            await super().run()
+            return
+        await asyncio.gather(super().run(), *(lk.run() for lk in self.links))
 
     async def connect(self) -> None:
         """Connect, tap the socket, and track whether the portfolio is synced."""
@@ -1063,6 +1266,7 @@ class TakerBot(_AdaptedTraderBot):
         def update_book_and_mark(snapshot: BookSnapshot) -> None:
             update_book(snapshot)
             owner = self._owner
+            owner.venue_primary.on_book(snapshot.symbol, snapshot.bids, snapshot.asks, snapshot.ref_price)
             owner.on_book(snapshot.symbol, snapshot.ref_price)
             # A fresh book in a symbol we are fading: decide now, not at the
             # next 0.5 s tick (the flash is over in ~2 s).
@@ -1099,7 +1303,7 @@ class TakerBot(_AdaptedTraderBot):
 
     async def _act_now(self) -> None:
         try:
-            signal = self._owner.on_tick(self.market, self.portfolio)
+            signal = self._owner.on_tick(self.market, self._owner.portfolio)
             if signal is not None:
                 await self._place_order(signal)
         except Exception:
@@ -1158,31 +1362,77 @@ class TakerBot(_AdaptedTraderBot):
         # the socket is gone, listen() ends too and run() reconnects both.
         owner = self._owner
         urgent = owner.is_urgent(signal.symbol)
+        pinned = owner.venue_for(signal)
         now = time.monotonic()
-        while self._sent_at and now - self._sent_at[0] > 1.05:
-            self._sent_at.popleft()
-        cap = TRADER_FLASH_BURST if urgent else TRADER_MSGS_PER_SEC
-        if len(self._sent_at) >= cap or (owner.quota_backoff() and not urgent):
-            logger.info("Quota: holding %s %d %s (%d sent in the last second)",
-                        signal.side, signal.quantity, signal.symbol, len(self._sent_at))
-            owner.order_held(signal.symbol)
+        gated = owner.gate(signal, self.market, owner.portfolio)
+        if gated is None:
             return
-        signal = owner.gate(signal, self.market, self.portfolio)
-        if signal is None:
+        r = self._route(gated, pinned)
+        if r is None:
+            logger.info("Route: no venue can take %s %d %s @ %.2f — dropped",
+                        gated.side, gated.quantity, gated.symbol, gated.price)
+            owner.order_held(gated.symbol)
             return
-        self._sent_at.append(now)
-        owner.note_sent(signal)
+        # Quotas are per venue: the primary's is the team's (shared with the
+        # broker), each extra venue meters its own.
+        sent = self._sent_at if r.venue == "primary" else self._venue_sent.setdefault(r.venue, deque())
+        while sent and now - sent[0] > 1.05:
+            sent.popleft()
+        cap = (TRADER_FLASH_BURST if urgent else TRADER_MSGS_PER_SEC) if r.venue == "primary" else VENUE_MSGS_PER_SEC
+        if len(sent) >= cap or (r.venue == "primary" and owner.quota_backoff() and not urgent):
+            logger.info("Quota: holding %s %d %s for %s (%d sent in the last second)",
+                        gated.side, gated.quantity, gated.symbol, r.venue, len(sent))
+            owner.order_held(gated.symbol)
+            return
+        out = Signal(symbol=gated.symbol, side=gated.side, quantity=r.quantity, price=r.price)
         try:
-            await self._send(PlaceOrder(team_id=self._owner.team_id,
-                                        symbol=signal.symbol, side=signal.side,
-                                        order_type="ioc", price=signal.price,
-                                        quantity=signal.quantity))
+            if r.venue == "primary":
+                await self._send(PlaceOrder(team_id=owner.team_id, symbol=out.symbol, side=out.side,
+                                            order_type="ioc", price=out.price, quantity=out.quantity))
+                owner.venue_primary.orders += 1
+            else:
+                link = next(lk for lk in self.links if lk.state.name == r.venue)
+                if not await link.send_order(out.symbol, out.side, out.quantity, out.price):
+                    owner.order_held(out.symbol)
+                    return
         except Exception:
-            logger.exception("Order send failed: %s %d %s — dropped",
-                             signal.side, signal.quantity, signal.symbol)
+            logger.exception("Order send failed: %s %d %s — dropped", out.side, out.quantity, out.symbol)
             return
-        logger.info("Order: IOC %s %d %s @ %.2f",
-                    signal.side, signal.quantity, signal.symbol, signal.price)
+        sent.append(now)
+        owner.note_sent(out)
+        logger.info("Order: IOC %s %d %s @ %.2f on %s (%s)",
+                    out.side, out.quantity, out.symbol, out.price, r.venue, r.why)
+
+    def _route(self, sig: Signal, pinned: str | None):
+        """Pick the venue for a gated order (team/venues.py route())."""
+        owner = self._owner
+        prim = owner.venue_primary
+        prim.connected = self._ws is not None
+        prim.session_open = self._session_open
+        prim.in_auction = owner._in_auction
+        prim.cash = self.portfolio.cash
+        prim.positions = dict(self.portfolio.positions)
+        prim.halted = {s for s in prim.quotes if owner.halts.is_halted(s)}
+        direct = Route("primary", sig.quantity, sig.price, sig.price, "primary")
+        if not self.links or pinned == "primary":
+            return direct                         # single venue: exactly as before
+        states = [prim] + [lk.state for lk in self.links]
+        # Opening exposure only where the fee is payable; a close may go
+        # anywhere that holds the position (route() keeps it there).
+        total = sum(v.positions.get(sig.symbol, 0) for v in states)
+        opening = total == 0 or (total > 0) == (sig.side == "buy")
+        if opening:
+            states = [v for v in states if v.taker <= MAX_OPEN_TAKER] or states
+        r = route(sig.symbol, sig.side, sig.quantity, sig.price, states)
+        if r is None:
+            # No venue shows a fill at the limit. The primary IOC may still find
+            # one — if the primary may take this order: an open at a payable fee,
+            # or a close of a position held THERE (never a cross-venue short).
+            held = prim.positions.get(sig.symbol, 0) * (1 if sig.side == "buy" else -1)
+            if (opening and prim.taker <= MAX_OPEN_TAKER) or (not opening and held < 0):
+                return Route("primary", min(sig.quantity, abs(held)) if not opening else sig.quantity,
+                             sig.price, sig.price, "primary (no venue shows a fill)")
+        return r
 
 
 if __name__ == "__main__":
