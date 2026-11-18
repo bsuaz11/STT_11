@@ -1,0 +1,8 @@
+LeadLagSignal over 300 recorded week-8 sessions (14 s); fills at the next tick's touch, 10 bps taker per side.
+Orders on a follower inside the lag after a big leader move, per session: median 23, min 15, sessions with ≥10: 100%
+All of them are in the predicted direction by construction (side = sign(beta) × sign(leader move)).
+
+  marker: 21.8 per session; the follower's mark then moved the predicted way 86% of the time, mean +4.0 bps over the lag; 6539 trades, gross cash -3,482
+  ramp  : 1.2 per session; the follower's mark then moved the predicted way 56% of the time, mean +5.8 bps over the lag; 300 trades, gross cash +18,239
+
+Traded $11,443,281; fees $11,443; net P&L $+3,306 = $+11.0 per session.

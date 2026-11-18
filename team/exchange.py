@@ -44,11 +44,18 @@ FLOW_LOG_EVERY = 500        # log the venue's flow share this often, in trades
 class MyExchange(Exchange):
     """Your venue policy."""
 
-    # Published fee schedule, bps of notional: nets the venue 3 bps a trade.
-    # The hosted venue takes its schedule from the portal (MY TEAM → MY VENUE),
-    # so keep these two in step with what /api/venues shows for STT_11.
-    taker_bps = 14      # None → class default
-    rebate_bps = 11
+    # Published fee schedule, bps of notional. Week 8 is a fee war: routers
+    # (ours included, team/venues.py) send each order to the best price AFTER
+    # the taker fee, so the venue with the highest taker fee only gets flow
+    # when its quotes are better by more than the difference. On Nov 17 the
+    # student venues charged 8, 8, 11 and 14 (us) bps. At 7/5 we are the
+    # cheapest venue to take on and still net the 2 bps floor per trade; our
+    # broker quotes here (scripts/run_week8.sh), so the rebate it earns stays
+    # in the team and every outside taker pays the team 7 bps plus the spread.
+    # The hosted venue takes its schedule from the portal (MY TEAM → MY VENUE)
+    # or POST /api/venue — keep these two in step with what /api/venues shows.
+    taker_bps = 7       # None → class default
+    rebate_bps = 5
 
     def __init__(self, limits: VenueLimits | None = None) -> None:
         self._volume: Counter[str] = Counter()
